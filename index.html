@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Кровь и Вирусы — 3D-атлас</title>
+  <meta name="description" content="Интерактивный 3D-атлас: как ВИЧ находит CD4 T-лимфоцит, проникает в него, мутирует — и как его останавливает антиретровирусная терапия." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;800&family=Manrope:wght@300;400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div id="loader"><span>ИНКУБАЦИЯ СЦЕНЫ</span><i></i></div>
+
+  <header class="hud-top">
+    <div class="brand"><b>HAEMA</b><span>/ атлас крови и вирусов</span></div>
+    <div class="scale" id="scale">масштаб условный · вирион ≈ 100 нм · эритроцит ≈ 7,5 мкм</div>
+  </header>
+
+  <nav class="rail" id="rail" aria-label="Главы"></nav>
+
+  <div class="hud-load" id="hudLoad" aria-live="polite">
+    <span>вирусная нагрузка</span>
+    <b id="vl">—</b>
+    <em>копий РНК / мл</em>
+  </div>
+
+  <main id="story">
+    <!-- 0 -->
+    <section class="chapter hero" data-title="Поток">
+      <div class="card hero-card">
+        <p class="kicker">интерактивный 3D-атлас</p>
+        <h1><span class="neon-red">Кровь</span><br />и&nbsp;<span class="neon-mag">вирусы</span></h1>
+        <p class="lead">В одном микролитре твоей крови — около пяти миллионов эритроцитов и&nbsp;несколько сотен CD4 T-лимфоцитов. Один из них сейчас станет мишенью.</p>
+        <p class="scroll-hint"><i></i> скролль вниз</p>
+      </div>
+    </section>
+
+    <!-- 1 -->
+    <section class="chapter right" data-title="CD4 T-клетка">
+      <article class="card">
+        <p class="num">01</p>
+        <h2>CD4 T-лимфоцит — <span class="neon-cyan">дирижёр иммунитета</span></h2>
+        <p>Т-хелперы не убивают сами — они координируют: подсказывают B-клеткам, какие антитела делать, и&nbsp;«включают» киллеров. На&nbsp;их мембране торчат белки <b>CD4</b> — именно по&nbsp;ним ВИЧ узнаёт жертву.</p>
+        <ul class="chips">
+          <li><b>500–1500</b> клеток/мкл — норма</li>
+          <li><b>&lt;200</b> — порог стадии СПИД</li>
+        </ul>
+      </article>
+    </section>
+
+    <!-- 2 -->
+    <section class="chapter left" data-title="Вирион">
+      <article class="card">
+        <p class="num">02</p>
+        <h2>Вирион ВИЧ: <span class="neon-mag">100&nbsp;нанометров</span> угрозы</h2>
+        <p>Липидная оболочка, украденная у&nbsp;предыдущей клетки, внутри — конический капсид с&nbsp;двумя копиями РНК. Снаружи — шипы <b>Env</b> (тримеры gp120/gp41).</p>
+        <div class="fact">
+          <span>факт</span>
+          <p>Шипов на&nbsp;удивление мало — в&nbsp;среднем около <b>14</b> на&nbsp;вирион (у&nbsp;гриппа их&nbsp;сотни). Редкие шипы хуже видны антителам — это одна из&nbsp;причин, почему вакцину так трудно сделать.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- 3 -->
+    <section class="chapter right" data-title="Захват CD4">
+      <article class="card">
+        <p class="num">03</p>
+        <h2>Рукопожатие: <span class="neon-lime">gp120</span> + <span class="neon-cyan">CD4</span></h2>
+        <p>Субъединица gp120 касается CD4 — и&nbsp;весь шип меняет форму. Открывается спрятанный участок (петля V3), который до&nbsp;этого был недоступен для&nbsp;иммунитета.</p>
+        <div class="fact">
+          <span>трюк вируса</span>
+          <p>Ключевой сайт связывания с&nbsp;CD4 утоплен в&nbsp;«каньон» и&nbsp;прикрыт гликановым щитом — сахарами самой клетки-хозяина. Для&nbsp;антител вирус выглядит почти как «своё».</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- 4 -->
+    <section class="chapter left" data-title="Корецептор">
+      <article class="card">
+        <p class="num">04</p>
+        <h2>Второй ключ: <span class="neon-mag">CCR5</span> или CXCR4</h2>
+        <p>Одного CD4 мало. Раскрывшийся gp120 цепляется за&nbsp;корецептор — хемокиновый рецептор <b>CCR5</b> (чаще в&nbsp;начале инфекции) или&nbsp;<b>CXCR4</b> (на&nbsp;поздних стадиях).</p>
+        <div class="fact">
+          <span>мутация-щит</span>
+          <p>У&nbsp;~1% северных европейцев обе копии гена CCR5 несут делецию <b>Δ32</b> — рецептора на&nbsp;мембране нет, и&nbsp;R5-штаммы не&nbsp;могут войти. Пересадка костного мозга от&nbsp;такого донора вылечила «берлинского пациента» Тимоти Брауна.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- 5 -->
+    <section class="chapter right" data-title="Слияние">
+      <article class="card">
+        <p class="num">05</p>
+        <h2>Гарпун <span class="neon-lime">gp41</span> и&nbsp;слияние мембран</h2>
+        <p>gp41 выстреливает слитый пептид в&nbsp;мембрану клетки, а&nbsp;затем складывается пополам, как&nbsp;застёжка-молния, в&nbsp;«шестиспиральный пучок». Мембраны стягиваются — и&nbsp;сливаются в&nbsp;одну.</p>
+        <ul class="chips">
+          <li><b>энфувиртид</b> — блокирует «молнию» gp41</li>
+          <li><b>маравирок</b> — закрывает CCR5</li>
+        </ul>
+      </article>
+    </section>
+
+    <!-- 6 -->
+    <section class="chapter left" data-title="Обратная транскрипция">
+      <article class="card">
+        <p class="num">06</p>
+        <h2>РНК → ДНК: <span class="neon-gold">обратная транскрипция</span></h2>
+        <p>Капсид — конус из&nbsp;~1500 белков CA (≈250 гексамеров и&nbsp;ровно 12 пентамеров) — едет по&nbsp;микротрубочкам к&nbsp;ядру. Внутри фермент <b>обратная транскриптаза</b> переписывает РНК вируса в&nbsp;ДНК.</p>
+        <div class="fact">
+          <span>свежие данные</span>
+          <p>Долго считалось, что капсид распадается в&nbsp;цитоплазме. Криоэлектронная томография показала: он&nbsp;протискивается через ядерную пору почти целым, а&nbsp;транскрипция завершается уже внутри ядра.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- 7 -->
+    <section class="chapter right" data-title="Интеграция">
+      <article class="card">
+        <p class="num">07</p>
+        <h2>Интеграза вшивает <span class="neon-gold">провирус</span> в&nbsp;геном</h2>
+        <p>Фермент <b>интеграза</b> разрезает ДНК клетки и&nbsp;встраивает туда вирусную. С&nbsp;этого момента ВИЧ — часть генома: при&nbsp;каждом делении клетка копирует его сама.</p>
+        <div class="fact">
+          <span>почему нет лекарства</span>
+          <p>Часть заражённых клеток памяти «засыпает» с&nbsp;провирусом внутри — это <b>латентный резервуар</b>. Таблетки его не&nbsp;видят. Период полураспада резервуара ~44 месяца: чтобы он&nbsp;исчез сам, нужно больше 70 лет терапии.</p>
+        </div>
+      </article>
+    </section>
+
+    <!-- 8 -->
+    <section class="chapter left" data-title="Мутации">
+      <article class="card">
+        <p class="num">08</p>
+        <h2>Почему вирус <span class="neon-mag">так быстро мутирует</span></h2>
+        <p>У&nbsp;обратной транскриптазы нет «корректуры»: она ошибается примерно раз на&nbsp;30&nbsp;000 нуклеотидов. Геном ВИЧ — ~9700 букв, так что почти каждая третья новая копия несёт мутацию.</p>
+        <pre class="genome" id="genome" aria-label="Анимация мутирующей последовательности"></pre>
+        <ul class="chips">
+          <li><b>~10¹⁰</b> вирионов в&nbsp;сутки без терапии</li>
+          <li><b>каждая</b> точечная мутация возникает ежедневно</li>
+          <li><b>рекомбинация</b> между двумя копиями РНК</li>
+        </ul>
+      </article>
+    </section>
+
+    <!-- 9 -->
+    <section class="chapter right" data-title="АРТ">
+      <article class="card">
+        <p class="num">09</p>
+        <h2>Антиретровирусная терапия: <span class="neon-gold">удар со&nbsp;всех сторон</span></h2>
+        <p>Против одного препарата вирус подберёт мутацию за&nbsp;недели. Против <b>комбинации</b> из&nbsp;2–3 классов сразу — нужно несколько редких мутаций одновременно в&nbsp;одном геноме. Шанс почти нулевой.</p>
+        <ul class="targets">
+          <li><i class="c-lime"></i><b>вход</b> — маравирок, фостемсавир, ибализумаб</li>
+          <li><i class="c-gold"></i><b>обратная транскриптаза</b> — тенофовир, эмтрицитабин (НИОТ), доравирин (ННИОТ)</li>
+          <li><i class="c-cyan"></i><b>интеграза</b> — долутегравир, биктегравир</li>
+          <li><i class="c-mag"></i><b>протеаза</b> — дарунавир: новые вирионы не&nbsp;созревают</li>
+          <li><i class="c-red"></i><b>капсид</b> — ленакапавир, укол раз в&nbsp;полгода</li>
+        </ul>
+      </article>
+    </section>
+
+    <!-- 10 -->
+    <section class="chapter finale" data-title="Н = Н">
+      <div class="card hero-card">
+        <p class="kicker">финал</p>
+        <h2 class="big"><span class="neon-cyan">Н&nbsp;=&nbsp;Н</span></h2>
+        <p class="lead"><b>Неопределяемый = Непередающий.</b> Если терапия держит вирусную нагрузку ниже порога определения, ВИЧ не&nbsp;передаётся половым путём — это показали исследования PARTNER на&nbsp;тысячах пар. Люди с&nbsp;ВИЧ на&nbsp;терапии живут почти столько&nbsp;же, сколько все остальные.</p>
+        <p class="small">Атлас — научно-популярная визуализация, не&nbsp;медицинская консультация. Тестирование и&nbsp;лечение — у&nbsp;врача-инфекциониста.</p>
+        <button class="again" id="again">↑ ещё раз через поток</button>
+      </div>
+    </section>
+  </main>
+
+  <noscript><p class="nojs">Для атласа нужен JavaScript и WebGL.</p></noscript>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

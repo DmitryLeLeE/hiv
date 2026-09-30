@@ -1,0 +1,1052 @@
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* =========================================================
+   helpers
+   ========================================================= */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ss = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const pulse = (x, c, w) => Math.exp(-(((x - c) / w) ** 2));
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const col = (hex) => new THREE.Color(hex);
+
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+const rr = (a, b) => a + (b - a) * rand();
+
+function fibonacciSphere(n) {
+  const out = [];
+  const g = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / (n - 1)) * 2;
+    const r = Math.sqrt(1 - y * y);
+    out.push(V(Math.cos(g * i) * r, y, Math.sin(g * i) * r));
+  }
+  return out;
+}
+
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isMobile = window.matchMedia('(max-width: 760px)').matches;
+
+/* =========================================================
+   palette
+   ========================================================= */
+const C = {
+  red: col('#ff2d4a'),
+  crimson: col('#3a0010'),
+  mag: col('#ff2bd6'),
+  violet: col('#8a3dff'),
+  cyan: col('#2af5ff'),
+  deepCyan: col('#01202b'),
+  lime: col('#b6ff3b'),
+  gold: col('#ffc53d'),
+  white: col('#ffffff'),
+};
+
+/* =========================================================
+   renderer / scene
+   ========================================================= */
+const canvas = document.getElementById('scene');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+} catch (e) {
+  document.body.classList.add('ready');
+  const p = document.createElement('p');
+  p.className = 'nogl';
+  p.textContent = 'WebGL недоступен — 3D-сцена не загрузилась, но текст атласа читается.';
+  document.body.appendChild(p);
+  throw e;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 1.75));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x020104, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.05, 220);
+
+const shared = {
+  uTime: { value: 0 },
+  uFogFar: { value: 85 },
+};
+
+/* =========================================================
+   shaders
+   ========================================================= */
+const NOISE = /* glsl */ `
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0);
+  const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy));
+  vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz);
+  vec3 l=1.0-g;
+  vec3 i1=min(g.xyz,l.zxy);
+  vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx;
+  vec3 x2=x0-i2+C.yyy;
+  vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857;
+  vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z);
+  vec4 x_=floor(j*ns.z);
+  vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy;
+  vec4 y=y_*ns.x+ns.yyyy;
+  vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy);
+  vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0;
+  vec4 s1=floor(b1)*2.0+1.0;
+  vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;
+  vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x);
+  vec3 p1=vec3(a0.zw,h.y);
+  vec3 p2=vec3(a1.xy,h.z);
+  vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0);
+  m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}`;
+
+/* Generic neon "fresnel" material, supports InstancedMesh + instanceColor. */
+function glowMaterial({
+  rim, core = col('#000000'), power = 2.4, intensity = 1, opacity = 1,
+  transparent = false, additive = false, lit = 0.6, depthWrite = true, side = THREE.FrontSide,
+}) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ...shared,
+      uRim: { value: rim.clone() },
+      uCore: { value: core.clone() },
+      uPower: { value: power },
+      uIntensity: { value: intensity },
+      uOpacity: { value: opacity },
+      uLit: { value: lit },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vTint;
+      void main(){
+        vec4 p = vec4(position, 1.0);
+        vec3 n = normal;
+        vTint = vec3(1.0);
+        #ifdef USE_INSTANCING
+          p = instanceMatrix * p;
+          n = mat3(instanceMatrix) * n;
+        #endif
+        #ifdef USE_INSTANCING_COLOR
+          vTint = instanceColor;
+        #endif
+        vec4 mv = modelViewMatrix * p;
+        vN = normalize(normalMatrix * n);
+        vV = normalize(-mv.xyz);
+        vDepth = -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uRim; uniform vec3 uCore; uniform float uPower; uniform float uIntensity;
+      uniform float uOpacity; uniform float uLit; uniform float uFogFar;
+      varying vec3 vN; varying vec3 vV; varying float vDepth; varying vec3 vTint;
+      void main(){
+        vec3 N = normalize(vN);
+        float f = pow(1.0 - abs(dot(N, normalize(vV))), uPower);
+        float l = max(dot(N, normalize(vec3(-0.4, 0.7, 0.6))), 0.0);
+        vec3 c = uCore * mix(1.0, 0.25 + l, uLit) + uRim * vTint * f * 1.6;
+        float fog = 1.0 - smoothstep(uFogFar * 0.3, uFogFar, vDepth);
+        gl_FragColor = vec4(c * uIntensity * fog, uOpacity * mix(0.35, 1.0, f));
+      }`,
+    transparent,
+    depthWrite,
+    side,
+    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+  });
+}
+
+/* Soft round points, colour per vertex, optional size per vertex. */
+function pointsMaterial({ size = 1, opacity = 1 } = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ...shared,
+      uSize: { value: size },
+      uOpacity: { value: opacity },
+      uPixel: { value: renderer.getPixelRatio() },
+    },
+    vertexShader: /* glsl */ `
+      attribute vec3 color; attribute float aSize;
+      uniform float uSize; uniform float uPixel;
+      varying vec3 vColor; varying float vDepth;
+      void main(){
+        vColor = color;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vDepth = -mv.z;
+        gl_PointSize = uSize * aSize * uPixel * (60.0 / max(vDepth, 0.1));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uOpacity; uniform float uFogFar;
+      varying vec3 vColor; varying float vDepth;
+      void main(){
+        float d = length(gl_PointCoord - 0.5);
+        float a = smoothstep(0.5, 0.0, d);
+        a *= a;
+        float fog = 1.0 - smoothstep(uFogFar * 0.3, uFogFar, vDepth);
+        gl_FragColor = vec4(vColor * a * uOpacity * fog, 1.0);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+function makePoints(n, sizeFn = () => 1) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const s = new Float32Array(n);
+  for (let i = 0; i < n; i++) s[i] = sizeFn(i);
+  g.setAttribute('aSize', new THREE.BufferAttribute(s, 1));
+  return g;
+}
+
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.2, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const GLOW = glowTexture();
+
+/* =========================================================
+   geometry of the story
+   ========================================================= */
+const R = 4.0;                                 // T-cell radius
+const UP = V(0, 1, 0);
+const d = V(0.5, 0.35, 0.8).normalize();       // docking direction
+const side = V().crossVectors(UP, d).normalize();
+const upv = V().crossVectors(d, side).normalize();
+const D = d.clone().multiplyScalar(R);         // docking point on membrane
+const at = (k, s = 0, u = 0, base = D) => base.clone().addScaledVector(d, k).addScaledVector(side, s).addScaledVector(upv, u);
+
+/* =========================================================
+   blood plasma dust
+   ========================================================= */
+const DUST = isMobile ? 1800 : 3500;
+const dustGeo = makePoints(DUST, () => rr(0.4, 1.6));
+{
+  const p = dustGeo.attributes.position.array;
+  const c = dustGeo.attributes.color.array;
+  for (let i = 0; i < DUST; i++) {
+    p[i * 3] = rr(-60, 60);
+    p[i * 3 + 1] = rr(-28, 28);
+    p[i * 3 + 2] = rr(-50, 30);
+    const k = rand();
+    const cc = k < 0.8 ? C.red : k < 0.93 ? C.mag : C.cyan;
+    const b = rr(0.25, 0.9);
+    c[i * 3] = cc.r * b; c[i * 3 + 1] = cc.g * b; c[i * 3 + 2] = cc.b * b;
+  }
+}
+const dustMat = pointsMaterial({ size: 0.9, opacity: 0.9 });
+dustMat.vertexShader = dustMat.vertexShader
+  .replace('void main(){', 'void main(){\n vec3 pp = position; pp.x = mod(pp.x + uTime * 1.2 + 60.0, 120.0) - 60.0; pp.y += sin(uTime*0.3 + position.z)*0.4;')
+  .replace('vec4(position, 1.0)', 'vec4(pp, 1.0)')
+  .replace('uniform float uSize;', 'uniform float uSize; uniform float uTime;');
+const dust = new THREE.Points(dustGeo, dustMat);
+dust.frustumCulled = false;
+scene.add(dust);
+
+/* =========================================================
+   erythrocytes (biconcave discs, Evans–Fung profile)
+   ========================================================= */
+function rbcGeometry() {
+  const pts = [];
+  const C0 = 0.2072, C2 = 2.0026, C4 = -1.1228;
+  const N = 28;
+  const h = (x) => 0.5 * Math.sqrt(Math.max(0, 1 - x * x)) * (C0 + C2 * x * x + C4 * x ** 4);
+  for (let i = 0; i <= N; i++) { const x = Math.sin((i / N) * Math.PI / 2); pts.push(new THREE.Vector2(Math.max(x, 0.0001), h(x))); }
+  for (let i = N - 1; i >= 0; i--) { const x = Math.sin((i / N) * Math.PI / 2); pts.push(new THREE.Vector2(Math.max(x, 0.0001), -h(x))); }
+  const g = new THREE.LatheGeometry(pts, 48);
+  g.computeVertexNormals();
+  return g;
+}
+const RBC = isMobile ? 170 : 280;
+const rbcMat = glowMaterial({ rim: C.red, core: col('#3e0512'), power: 2.0, intensity: 0.8, lit: 0.9 });
+const rbc = new THREE.InstancedMesh(rbcGeometry(), rbcMat, RBC);
+rbc.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+rbc.frustumCulled = false;
+const rbcData = [];
+for (let i = 0; i < RBC; i++) {
+  rbcData.push({
+    p: V(rr(-70, 70), rr(-26, 26), rr(-55, 24)),
+    speed: rr(1.6, 3.4),
+    axis: V(rr(-1, 1), rr(-1, 1), rr(-1, 1)).normalize(),
+    spin: rr(0.15, 0.7) * (rand() < 0.5 ? -1 : 1),
+    phase: rr(0, 100),
+    s: rr(1.45, 2.0),
+  });
+  const k = rr(0.55, 1.1);
+  rbc.setColorAt(i, new THREE.Color(k, k * rr(0.85, 1), k));
+}
+scene.add(rbc);
+
+/* =========================================================
+   CD4 T-lymphocyte
+   ========================================================= */
+const cell = new THREE.Group();
+scene.add(cell);
+
+const cellMat = new THREE.ShaderMaterial({
+  uniforms: {
+    ...shared,
+    uRim: { value: C.cyan.clone() },
+    uCore: { value: C.deepCyan.clone() },
+    uSee: { value: 1 },
+    uDockDir: { value: d.clone() },
+    uDockColor: { value: C.lime.clone() },
+    uDockGlow: { value: 0 },
+    uOpacity: { value: 1 },
+    uAmp: { value: 0.14 },
+  },
+  vertexShader: /* glsl */ `
+    uniform float uTime; uniform float uAmp;
+    varying vec3 vN; varying vec3 vV; varying vec3 vObj; varying float vNoise; varying float vDepth;
+    ${NOISE}
+    void main(){
+      vec3 nrm = normalize(position);
+      float n = snoise(nrm * 1.4 + vec3(uTime * 0.07)) * 0.65 + snoise(nrm * 4.2 - vec3(uTime * 0.11)) * 0.35;
+      vec3 pos = position + normal * n * uAmp;
+      vNoise = n; vObj = nrm;
+      vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+      vN = normalize(normalMatrix * normal);
+      vV = normalize(-mv.xyz);
+      vDepth = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uRim; uniform vec3 uCore; uniform vec3 uDockDir; uniform vec3 uDockColor;
+    uniform float uDockGlow; uniform float uOpacity; uniform float uTime; uniform float uFogFar; uniform float uSee;
+    varying vec3 vN; varying vec3 vV; varying vec3 vObj; varying float vNoise; varying float vDepth;
+    void main(){
+      vec3 N = normalize(vN);
+      float f = pow(1.0 - abs(dot(N, normalize(vV))), 2.1);
+      float l = max(dot(N, normalize(vec3(-0.4, 0.7, 0.6))), 0.0);
+      // topographic contour lines across the membrane
+      float band = fract(vNoise * 7.0 + uTime * 0.05);
+      float lines = smoothstep(0.0, 0.04, band) * (1.0 - smoothstep(0.06, 0.12, band));
+      vec3 c = uCore * (0.3 + 0.7 * l) * uSee + uRim * f * 0.85 + uRim * lines * 0.22 * uSee;
+      float dk = smoothstep(0.955, 1.0, dot(vObj, uDockDir));
+      float ring = smoothstep(0.93, 0.955, dot(vObj, uDockDir)) * (1.0 - dk);
+      c += uDockColor * (dk * 0.55 + ring * 0.35) * uDockGlow * (0.8 + 0.2 * sin(uTime * 7.0));
+      float fog = 1.0 - smoothstep(uFogFar * 0.3, uFogFar, vDepth);
+      float a = mix(uOpacity, 1.0, clamp(f * 1.1 * mix(0.55, 1.0, uSee) + lines * 0.35 * uSee + dk * uDockGlow, 0.0, 1.0));
+      gl_FragColor = vec4(c * fog, a);
+    }`,
+  transparent: true,
+  depthWrite: false,
+});
+const membrane = new THREE.Mesh(new THREE.IcosahedronGeometry(R, 48), cellMat);
+membrane.renderOrder = 10;
+cell.add(membrane);
+
+// CD4 receptors — stalks + glowing tips
+const REC_LEN = 0.38, TIP_R = 0.075;
+const recDirs = [d.clone()];
+for (const v of fibonacciSphere(isMobile ? 170 : 260)) if (v.angleTo(d) > 0.22) recDirs.push(v);
+const stalkGeo = new THREE.CylinderGeometry(0.018, 0.028, REC_LEN, 6).translate(0, REC_LEN / 2, 0);
+const tipGeo = new THREE.IcosahedronGeometry(TIP_R, 1).translate(0, REC_LEN, 0);
+const recStalks = new THREE.InstancedMesh(stalkGeo, glowMaterial({ rim: C.cyan, core: col('#04262e'), power: 1.2, intensity: 0.6 }), recDirs.length);
+const recTips = new THREE.InstancedMesh(tipGeo, glowMaterial({ rim: C.cyan, core: col('#0f5864'), power: 1.0, intensity: 0.75, lit: 0.2 }), recDirs.length);
+{
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  recDirs.forEach((dir, i) => {
+    q.setFromUnitVectors(UP, dir);
+    const s = i === 0 ? 1.15 : rr(0.75, 1.1);
+    m.compose(dir.clone().multiplyScalar(R - 0.04), q, V(s, s, s));
+    recStalks.setMatrixAt(i, m);
+    recTips.setMatrixAt(i, m);
+    recTips.setColorAt(i, C.white);
+    recStalks.setColorAt(i, C.white);
+  });
+}
+cell.add(recStalks, recTips);
+
+// CCR5 co-receptor: seven transmembrane helices in a ring, next to the dock
+const d2 = d.clone().addScaledVector(side, -0.3).addScaledVector(upv, -0.06).normalize();
+const ccr5 = new THREE.Group();
+{
+  const mat = glowMaterial({ rim: C.mag, core: col('#2a0426'), power: 1.2, intensity: 0.8 });
+  const g = new THREE.CylinderGeometry(0.035, 0.035, 0.46, 8);
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const h = new THREE.Mesh(g, mat);
+    h.position.set(Math.cos(a) * 0.09, 0.12, Math.sin(a) * 0.09);
+    h.rotation.set(Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25);
+    ccr5.add(h);
+  }
+  const cap = new THREE.Mesh(new THREE.IcosahedronGeometry(0.1, 1), mat);
+  cap.position.y = 0.38;
+  ccr5.add(cap);
+  ccr5.quaternion.setFromUnitVectors(UP, d2);
+}
+cell.add(ccr5);
+
+// nucleus + chromatin
+const nucleusMat = glowMaterial({ rim: C.violet, core: col('#0c031c'), power: 1.6, intensity: 0.8, opacity: 0, transparent: true, additive: true, depthWrite: false, lit: 0.3 });
+const nucleus = new THREE.Mesh(new THREE.IcosahedronGeometry(1.75, 12), nucleusMat);
+nucleus.renderOrder = 2;
+cell.add(nucleus);
+
+const CHROM = 1600;
+const chromGeo = makePoints(CHROM, () => rr(0.5, 1.1));
+const chromBase = [];
+{
+  const p = chromGeo.attributes.position.array;
+  for (let i = 0; i < CHROM; i++) {
+    const s = i / CHROM;
+    const a = s * Math.PI * 2;
+    // a knotted curve folded inside the nucleus, with a double-helix twist
+    const cx = Math.sin(a * 3) * 0.9 + Math.cos(a * 7) * 0.3;
+    const cy = Math.cos(a * 4) * 0.8 + Math.sin(a * 9) * 0.2;
+    const cz = Math.sin(a * 5 + 1) * 0.85;
+    const tw = s * 380 + (i % 2) * Math.PI;
+    p[i * 3] = cx + Math.cos(tw) * 0.06;
+    p[i * 3 + 1] = cy + Math.sin(tw) * 0.06;
+    p[i * 3 + 2] = cz + Math.cos(tw + 1.3) * 0.06;
+    chromBase.push(s);
+  }
+}
+const chromMat = pointsMaterial({ size: 0.9, opacity: 0 });
+const chromatin = new THREE.Points(chromGeo, chromMat);
+chromatin.renderOrder = 3;
+cell.add(chromatin);
+
+/* =========================================================
+   HIV virion
+   ========================================================= */
+const VR = 0.9;
+const virus = new THREE.Group();
+scene.add(virus);
+
+const envMat = new THREE.ShaderMaterial({
+  uniforms: { ...shared, uOpacity: { value: 1 }, uRim: { value: C.mag.clone() } },
+  vertexShader: /* glsl */ `
+    uniform float uTime;
+    varying vec3 vN; varying vec3 vV; varying float vN2; varying float vDepth;
+    ${NOISE}
+    void main(){
+      float n = snoise(normal * 3.0 + vec3(uTime * 0.3));
+      vN2 = n;
+      vec3 pos = position + normal * n * 0.035;
+      vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+      vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vDepth = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform float uOpacity; uniform vec3 uRim; uniform float uFogFar;
+    varying vec3 vN; varying vec3 vV; varying float vN2; varying float vDepth;
+    void main(){
+      float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
+      vec3 c = uRim * (f * 0.95 + 0.03 + max(vN2, 0.0) * 0.12);
+      float fog = 1.0 - smoothstep(uFogFar * 0.3, uFogFar, vDepth);
+      gl_FragColor = vec4(c * fog, uOpacity * clamp(f * 1.2 + 0.08, 0.0, 1.0));
+    }`,
+  transparent: true,
+  depthWrite: false,
+});
+const envelope = new THREE.Mesh(new THREE.IcosahedronGeometry(VR, 20), envMat);
+envelope.renderOrder = 13;
+virus.add(envelope);
+
+const latticeMat = new THREE.LineBasicMaterial({ color: C.mag, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false });
+const lattice = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(VR * 0.9, 2)), latticeMat);
+lattice.renderOrder = 12;
+virus.add(lattice);
+
+// Env spikes: ~14 trimers per virion; spike #0 points to the cell (+Z local)
+const SPIKES = 14;
+const spikeDirs = fibonacciSphere(SPIKES);
+{
+  const q = new THREE.Quaternion().setFromUnitVectors(spikeDirs[0].clone(), V(0, 0, 1));
+  spikeDirs.forEach((v) => v.applyQuaternion(q));
+}
+const spikeGroup = new THREE.Group();
+virus.add(spikeGroup);
+const spikeMat = glowMaterial({ rim: C.lime, core: col('#142a00'), power: 1.1, intensity: 0.7, transparent: true });
+const spikeStalk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.03, 0.045, 0.22, 6), spikeMat, SPIKES);
+const spikeHead = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.075, 1), spikeMat, SPIKES * 3);
+{
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion();
+  spikeDirs.forEach((dir, i) => {
+    q.setFromUnitVectors(UP, dir);
+    m.compose(dir.clone().multiplyScalar(VR + 0.1), q, V(1, 1, 1));
+    spikeStalk.setMatrixAt(i, m);
+    spikeStalk.setColorAt(i, C.white);
+    const t1 = V(1, 0, 0).applyQuaternion(q), t2 = V(0, 0, 1).applyQuaternion(q);
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2;
+      const pos = dir.clone().multiplyScalar(VR + 0.27).addScaledVector(t1, Math.cos(a) * 0.065).addScaledVector(t2, Math.sin(a) * 0.065);
+      m.compose(pos, q, V(1, 1, 1));
+      spikeHead.setMatrixAt(i * 3 + k, m);
+      spikeHead.setColorAt(i * 3 + k, C.white);
+    }
+  });
+}
+spikeGroup.add(spikeStalk, spikeHead);
+const DOCK_DIST = R + REC_LEN * 1.15 + TIP_R + 0.34 + VR - 0.06; // centre of a docked virion, along d
+
+// conical capsid (fullerene cone) — travels on its own after fusion
+const capsid = new THREE.Group();
+{
+  const g = new THREE.ConeGeometry(0.3, 0.9, 12, 5, true).rotateX(Math.PI / 2);
+  const inner = new THREE.Mesh(g, glowMaterial({ rim: C.gold, core: col('#1e0f00'), power: 1.4, intensity: 0.7, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  const wire = new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: C.gold, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(0.3, 12).translate(0, 0, -0.45), inner.material);
+  capsid.add(inner, wire, cap);
+  // two copies of RNA genome inside
+  const rnaGeo = makePoints(80, () => 0.7);
+  const p = rnaGeo.attributes.position.array, c = rnaGeo.attributes.color.array;
+  for (let i = 0; i < 80; i++) {
+    const s = (i % 40) / 40, strand = i < 40 ? 1 : -1;
+    const z = lerp(-0.38, 0.3, s);
+    const rad = lerp(0.2, 0.05, s);
+    p[i * 3] = Math.cos(s * 14) * rad * 0.6 + strand * 0.03;
+    p[i * 3 + 1] = Math.sin(s * 14) * rad * 0.6;
+    p[i * 3 + 2] = z;
+    c[i * 3] = C.mag.r; c[i * 3 + 1] = C.mag.g; c[i * 3 + 2] = C.mag.b;
+  }
+  capsid.add(new THREE.Points(rnaGeo, pointsMaterial({ size: 0.25 })));
+}
+capsid.traverse((o) => { o.renderOrder = 11; });
+scene.add(capsid);
+
+/* gp41 "harpoons" */
+const harpoonGeo = new THREE.BufferGeometry();
+harpoonGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8 * 2 * 3), 3));
+const harpoonMat = new THREE.LineBasicMaterial({ color: C.lime, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const harpoons = new THREE.LineSegments(harpoonGeo, harpoonMat);
+harpoons.frustumCulled = false;
+scene.add(harpoons);
+
+/* contact flash */
+const flashMat = new THREE.SpriteMaterial({ map: GLOW, color: C.lime, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const flash = new THREE.Sprite(flashMat);
+flash.renderOrder = 20;
+scene.add(flash);
+
+/* fusion burst */
+const BURST = 700;
+const burstGeo = makePoints(BURST, () => rr(0.4, 1.4));
+const burstDirs = [];
+for (let i = 0; i < BURST; i++) {
+  const v = V(rr(-1, 1), rr(-1, 1), rr(-1, 1)).normalize();
+  if (v.dot(d) < 0) v.addScaledVector(d, -2 * v.dot(d));
+  burstDirs.push({ v, s: rr(0.6, 3.4), c: rand() < 0.75 ? C.mag : C.lime });
+}
+const burst = new THREE.Points(burstGeo, pointsMaterial({ size: 0.5 }));
+burst.frustumCulled = false;
+scene.add(burst);
+
+/* reverse-transcription trail: RNA (magenta) turning into double-stranded DNA (gold) */
+const TRAIL = 900;
+const trailGeo = makePoints(TRAIL, () => rr(0.6, 1.1));
+const trail = new THREE.Points(trailGeo, pointsMaterial({ size: 0.45 }));
+trail.frustumCulled = false;
+trail.renderOrder = 11;
+scene.add(trail);
+
+/* budding progeny virions — each one slightly different */
+const BUDS = isMobile ? 55 : 90;
+const budMat = glowMaterial({ rim: C.white, core: col('#140010'), power: 1.8, intensity: 0.75 });
+const buds = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.34, 3), budMat, BUDS);
+buds.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+buds.frustumCulled = false;
+const budData = [];
+{
+  const dirs = fibonacciSphere(BUDS);
+  for (let i = 0; i < BUDS; i++) {
+    const mutant = rand() < 0.22;
+    const hue = mutant ? rr(0.15, 0.5) : rr(0.8, 0.95);
+    budData.push({
+      dir: dirs[i].clone().add(V(rr(-0.1, 0.1), rr(-0.1, 0.1), rr(-0.1, 0.1))).normalize(),
+      birth: rr(7.45, 8.1),
+      dist: rr(3, 11),
+      wob: rr(0, 10),
+      kill: rr(8.85, 9.55),
+      s: rr(0.75, 1.15),
+    });
+    buds.setColorAt(i, new THREE.Color().setHSL(hue, 1, 0.55));
+  }
+}
+scene.add(buds);
+
+/* antiretroviral drugs — five colour-coded classes swarming the scene */
+const DRUGS = isMobile ? 1300 : 2400;
+const drugGeo = makePoints(DRUGS, () => rr(0.5, 1.5));
+const drugData = new Float32Array(DRUGS * 4);
+{
+  const c = drugGeo.attributes.color.array;
+  const classes = [C.lime, C.gold, C.cyan, C.mag, C.red];
+  for (let i = 0; i < DRUGS; i++) {
+    drugData[i * 4] = rr(R + 0.8, R + 12);
+    drugData[i * 4 + 1] = rr(0, Math.PI * 2);
+    drugData[i * 4 + 2] = Math.acos(rr(-1, 1));
+    drugData[i * 4 + 3] = rr(0.05, 0.25) * (rand() < 0.5 ? -1 : 1);
+    const cc = classes[i % 5];
+    c[i * 3] = cc.r; c[i * 3 + 1] = cc.g; c[i * 3 + 2] = cc.b;
+  }
+}
+const drugMat = pointsMaterial({ size: 1.0, opacity: 0 });
+const drugs = new THREE.Points(drugGeo, drugMat);
+drugs.frustumCulled = false;
+scene.add(drugs);
+
+/* =========================================================
+   camera path — one key per chapter
+   ========================================================= */
+const KEYS = [
+  { p: V(0, 3, 36), t: V(0, 0, 0) },
+  { p: V(-4.5, 1.5, 13.5), t: V(0.6, 0, 0) },
+  { p: at(8.5, 3.6, 1.3), t: at(2.4, -1.4) },
+  { p: at(5.4, 2.8, 1.0), t: at(1.1) },
+  { p: at(5.0, -3.2, 1.6), t: at(0.9, 0.3) },
+  { p: at(6.2, 0.9, 2.8), t: at(0.4, 1.5, 0.3) },
+  { p: at(9.5, 4.2, 2.6, V()), t: at(2.3, 0, 0, V()) },
+  { p: at(7.2, -3.6, 1.6, V()), t: at(0.5, 0, 0, V()) },
+  { p: V(0, 5, 22), t: V(0, 0, 0) },
+  { p: V(7, -2.5, 18.5), t: V(0, 0.4, 0) },
+  { p: V(0, 8, 44), t: V(0, 0, 0) },
+];
+const LAST = KEYS.length - 1;
+const camCurve = new THREE.CatmullRomCurve3(KEYS.map((k) => k.p), false, 'centripetal');
+
+/* virion path pieces */
+const FAR = at(17, -13, 8);
+const HOVER = at(3.3);
+const DOCK = d.clone().multiplyScalar(DOCK_DIST);
+const FUSED = at(0.15);
+const qDock = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), d.clone().negate());
+const tumbleAxis = V(0.3, 1, 0.2).normalize();
+const NUC_ENTRY = d.clone().multiplyScalar(1.85);
+
+function capsidPath(u, out = V()) {
+  out.lerpVectors(FUSED, NUC_ENTRY, u);
+  const b = Math.sin(u * Math.PI);
+  return out.addScaledVector(side, b * 0.7).addScaledVector(upv, b * 0.35);
+}
+
+/* =========================================================
+   post-processing
+   ========================================================= */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.55, 0.22);
+composer.addPass(bloom);
+const lensPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uAmt: { value: 0.012 }, uTime: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uAmt; varying vec2 vUv;
+    void main(){
+      vec2 c = vUv - 0.5; float r = dot(c, c);
+      vec2 off = c * uAmt * (0.4 + r * 4.0);
+      vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
+      col *= 1.0 - smoothstep(0.12, 0.62, r) * 0.85;
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+composer.addPass(lensPass);
+composer.addPass(new OutputPass());
+
+/* =========================================================
+   scroll + UI
+   ========================================================= */
+const chapters = [...document.querySelectorAll('.chapter')];
+const rail = document.getElementById('rail');
+const railBtns = chapters.map((ch, i) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = ch.dataset.title;
+  b.setAttribute('aria-label', `Глава ${i}: ${ch.dataset.title}`);
+  b.addEventListener('click', () => goTo(i));
+  rail.appendChild(b);
+  return b;
+});
+function chapterTop(i) {
+  const ch = chapters[i];
+  return ch.offsetTop + ch.offsetHeight / 2 - window.innerHeight / 2;
+}
+function goTo(i) { window.scrollTo({ top: Math.max(0, chapterTop(i)), behavior: reduceMotion ? 'auto' : 'smooth' }); }
+document.getElementById('again').addEventListener('click', () => goTo(0));
+
+let tTarget = 0, tNow = 0;
+function readScroll() {
+  const h = chapters[0].offsetHeight;
+  const y = window.scrollY + window.innerHeight / 2 - h / 2;
+  tTarget = clamp(y / h, 0, LAST);
+}
+window.addEventListener('scroll', readScroll, { passive: true });
+
+const mouse = { x: 0, y: 0, sx: 0, sy: 0 };
+window.addEventListener('pointermove', (e) => {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
+});
+
+// viral load HUD
+const hud = document.getElementById('hudLoad');
+const vl = document.getElementById('vl');
+const fmt = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+let lastVl = '';
+
+// mutating genome ticker
+const genomeEl = document.getElementById('genome');
+const BASES = 'ACGU';
+const GLEN = isMobile ? 96 : 144;
+const genome = Array.from({ length: GLEN }, () => BASES[(rand() * 4) | 0]);
+const mutAt = new Float32Array(GLEN).fill(-99);
+function renderGenome(now) {
+  let html = '';
+  for (let i = 0; i < GLEN; i++) html += now - mutAt[i] < 1.6 ? `<span class="m">${genome[i]}</span>` : genome[i];
+  genomeEl.innerHTML = html;
+}
+let genomeTick = 0;
+
+let activeChapter = -1;
+function updateUI(t, time) {
+  const idx = Math.round(tTarget);
+  if (idx !== activeChapter) {
+    activeChapter = idx;
+    railBtns.forEach((b, i) => b.classList.toggle('on', i === idx));
+  }
+  chapters.forEach((ch, i) => ch.classList.toggle('in', Math.abs(tTarget - i) < 0.62));
+
+  const show = t > 7.4;
+  hud.classList.toggle('on', show);
+  if (show) {
+    const rise = ss(7.45, 8.3, t), fall = ss(9.0, 9.85, t);
+    const logV = lerp(lerp(1.5, 5.25, rise), 1.6, fall);
+    const v = Math.pow(10, logV) + Math.sin(time * 3) * Math.pow(10, logV) * 0.015 * (1 - fall);
+    const txt = fall > 0.97 ? '< 50' : fmt(v);
+    if (txt !== lastVl) { vl.textContent = txt; lastVl = txt; }
+    hud.classList.toggle('low', fall > 0.97);
+  }
+
+  if (Math.abs(tTarget - 8) < 0.7 && time - genomeTick > 0.11) {
+    genomeTick = time;
+    const i = (rand() * GLEN) | 0;
+    let b;
+    do { b = BASES[(rand() * 4) | 0]; } while (b === genome[i]);
+    genome[i] = b;
+    mutAt[i] = time;
+    renderGenome(time);
+  }
+}
+renderGenome(0);
+
+/* =========================================================
+   per-frame scene update
+   ========================================================= */
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = V(), _v2 = V(), _s = V();
+const camPos = V(), camTgt = V(), _t1 = V(), _t2 = V();
+
+function update(t, time, dt) {
+  /* ---- camera ---- */
+  const i0 = Math.min(Math.floor(t), LAST - 1);
+  const f = t - i0;
+  const fe = lerp(f, f * f * (3 - 2 * f), 0.7);
+  camCurve.getPoint((i0 + fe) / LAST, camPos);
+  camTgt.lerpVectors(KEYS[i0].t, KEYS[i0 + 1].t, fe);
+  const intro = 1 - ss(0, 0.8, t);
+  camPos.x += Math.sin(time * 0.13) * 2.5 * intro;
+  camPos.y += Math.sin(time * 0.21) * 1.2 * intro;
+
+  mouse.sx += (mouse.x - mouse.sx) * Math.min(1, dt * 2.5);
+  mouse.sy += (mouse.y - mouse.sy) * Math.min(1, dt * 2.5);
+  const dist = camPos.distanceTo(camTgt);
+  const par = clamp(dist * 0.06, 0.12, 1.4);
+  camera.position.copy(camPos);
+  camera.lookAt(camTgt);
+  _t1.set(1, 0, 0).applyQuaternion(camera.quaternion);
+  _t2.set(0, 1, 0).applyQuaternion(camera.quaternion);
+  camera.position.addScaledVector(_t1, mouse.sx * par).addScaledVector(_t2, -mouse.sy * par * 0.6);
+  camera.lookAt(camTgt);
+
+  /* ---- T-cell ---- */
+  cell.rotation.y = Math.sin(time * 0.08) * 0.35 * (1 - ss(1.1, 2.0, t)) + Math.sin(time * 0.05) * 0.2 * ss(9.6, 10, t);
+  const see = 1 - 0.82 * ss(5.2, 5.9, t) * (1 - ss(7.6, 8.3, t));
+  cellMat.uniforms.uOpacity.value = see;
+  cellMat.uniforms.uSee.value = see;
+  rbcMat.uniforms.uIntensity.value = lerp(0.3, 0.8, see);
+  recTips.material.uniforms.uIntensity.value = 0.75 * lerp(0.3, 1, see);
+  recStalks.material.uniforms.uIntensity.value = 0.6 * lerp(0.3, 1, see);
+  const infected = ss(6.4, 7.6, t) * (1 - ss(9.1, 9.9, t));
+  cellMat.uniforms.uRim.value.copy(C.cyan).lerp(C.violet, infected * 0.75);
+  const dockGlow = ss(2.75, 3.1, t) * (1 - ss(6.0, 6.8, t));
+  cellMat.uniforms.uDockGlow.value = dockGlow;
+  cellMat.uniforms.uDockColor.value.copy(C.lime).lerp(C.mag, ss(3.6, 4.2, t));
+
+  // highlight the docking CD4 receptor
+  const hl = 1 + (1.3 + Math.sin(time * 5) * 0.4) * ss(1.4, 2.0, t) * (1 - ss(5.2, 5.6, t));
+  recTips.setColorAt(0, _v.set(hl, hl, hl));
+  recTips.instanceColor.needsUpdate = true;
+
+  // CCR5 rises out of the membrane
+  const cc = ss(3.35, 4.0, t);
+  ccr5.visible = cc > 0.001;
+  ccr5.position.copy(d2).multiplyScalar(R - 0.35 + cc * 0.3);
+  ccr5.scale.setScalar(Math.max(cc, 0.001));
+
+  // nucleus
+  const nuc = ss(5.3, 5.9, t) * (1 - ss(7.8, 8.4, t));
+  const nucFlash = pulse(t, 7.35, 0.22);
+  nucleusMat.uniforms.uOpacity.value = nuc;
+  nucleusMat.uniforms.uIntensity.value = 0.7 + nucFlash * 1.4;
+  nucleus.visible = chromatin.visible = nuc > 0.001;
+  chromMat.uniforms.uOpacity.value = nuc * 0.9;
+  if (nuc > 0.001) {
+    const c = chromGeo.attributes.color.array;
+    const integ = ss(7.0, 7.55, t);
+    for (let i = 0; i < CHROM; i++) {
+      const s = chromBase[i];
+      const inGold = s > 0.12 && s < 0.12 + 0.05 * integ;
+      const cc2 = inGold ? C.gold : C.violet;
+      const k = inGold ? 1.6 : 0.55;
+      c[i * 3] = cc2.r * k; c[i * 3 + 1] = cc2.g * k; c[i * 3 + 2] = cc2.b * k;
+    }
+    chromGeo.attributes.color.needsUpdate = true;
+    chromatin.rotation.y = time * 0.05;
+  }
+
+  /* ---- virion ---- */
+  const vis = ss(0.9, 1.4, t);
+  virus.visible = vis > 0.001 && t < 5.9;
+  const pA = ss(1.15, 2.05, t), pB = ss(2.55, 3.1, t), pC = ss(4.45, 5.3, t);
+  _v.lerpVectors(FAR, HOVER, pA).lerp(DOCK, pB).lerp(FUSED, pC);
+  const wob = (1 - pB) * vis;
+  _v.x += Math.sin(time * 0.9) * 0.25 * wob;
+  _v.y += Math.cos(time * 0.7) * 0.25 * wob;
+  virus.position.copy(_v);
+  const tumble = 1 - ss(1.6, 2.7, t);
+  _q2.setFromAxisAngle(tumbleAxis, tumble * (time * 0.5 + 2.4));
+  virus.quaternion.copy(qDock).multiply(_q2);
+  _q.setFromAxisAngle(V(0, 0, 1), time * 0.15 * tumble);
+  virus.quaternion.multiply(_q);
+
+  const envFade = 1 - ss(4.7, 5.45, t);
+  envMat.uniforms.uOpacity.value = envFade * vis;
+  latticeMat.opacity = 0.18 * envFade * vis;
+  envelope.scale.set(1 + pC * 0.45, 1 + pC * 0.45, 1 - pC * 0.55);
+  spikeMat.uniforms.uOpacity.value = (1 - ss(4.6, 5.15, t)) * vis;
+  spikeGroup.scale.setScalar(1 - ss(4.6, 5.15, t) * 0.25);
+  // gp120 bound → conformational change glows white
+  const bound = ss(2.9, 3.2, t);
+  const sc = 1 + bound * (1.1 + Math.sin(time * 6) * 0.3);
+  for (let k = 0; k < 3; k++) spikeHead.setColorAt(k, _s.set(sc, sc, sc));
+  spikeStalk.setColorAt(0, _s.set(sc, sc, sc));
+  spikeHead.instanceColor.needsUpdate = spikeStalk.instanceColor.needsUpdate = true;
+
+  /* ---- capsid ---- */
+  const u = ss(5.45, 6.95, t);
+  const capVis = ss(1.0, 1.6, t) * (1 - ss(7.0, 7.4, t));
+  capsid.visible = capVis > 0.001;
+  if (t < 5.45) {
+    capsid.position.copy(virus.position);
+    capsid.quaternion.copy(virus.quaternion);
+  } else {
+    capsidPath(u, capsid.position);
+    capsidPath(Math.min(u + 0.02, 1), _v2);
+    _q.setFromUnitVectors(V(0, 0, 1), _v2.sub(capsid.position).normalize().lengthSq() > 0 ? _v2 : d.clone().negate());
+    capsid.quaternion.slerp(_q, 0.15);
+  }
+  capsid.scale.setScalar(Math.max(capVis, 0.001) * (1 + pulse(t, 5.2, 0.2) * 0.15));
+  capsid.rotateZ(dt * 0.4);
+
+  /* ---- gp41 harpoons ---- */
+  const hp = ss(4.1, 4.5, t) * (1 - ss(5.0, 5.4, t));
+  harpoonMat.opacity = hp;
+  harpoons.visible = hp > 0.001;
+  if (harpoons.visible) {
+    const p = harpoonGeo.attributes.position.array;
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + time * 0.2;
+      _t1.copy(side).multiplyScalar(Math.cos(a)).addScaledVector(upv, Math.sin(a));
+      _v.copy(virus.position).addScaledVector(d, -VR * 0.8).addScaledVector(_t1, VR * 0.55);
+      const reach = ss(4.1, 4.4, t);
+      _v2.copy(D).addScaledVector(d, 0.05).addScaledVector(_t1, 0.6);
+      _v2.lerpVectors(_v, _v2, reach);
+      p.set([_v.x, _v.y, _v.z, _v2.x, _v2.y, _v2.z], k * 6);
+    }
+    harpoonGeo.attributes.position.needsUpdate = true;
+  }
+
+  /* ---- contact flash ---- */
+  const f1 = pulse(t, 3.0, 0.28), f2 = pulse(t, 3.95, 0.28), f3 = pulse(t, 5.05, 0.35);
+  const fl = Math.max(f1, f2, f3);
+  flashMat.opacity = clamp(fl) * (0.4 + Math.sin(time * 12) * 0.08);
+  flashMat.color.copy(C.lime).lerp(C.mag, clamp(f2 + f3 - f1));
+  flash.position.copy(D).addScaledVector(d, 0.55);
+  flash.scale.setScalar(1.3 + f3 * 2.2);
+  flash.visible = fl > 0.01;
+
+  /* ---- fusion burst ---- */
+  const be = ss(4.95, 6.2, t);
+  burst.visible = be > 0 && be < 1;
+  if (burst.visible) {
+    const p = burstGeo.attributes.position.array, c = burstGeo.attributes.color.array;
+    const fade = (1 - be) * (1 - be);
+    for (let i = 0; i < BURST; i++) {
+      const bd = burstDirs[i];
+      _v.copy(D).addScaledVector(bd.v, Math.sqrt(be) * bd.s);
+      p[i * 3] = _v.x; p[i * 3 + 1] = _v.y; p[i * 3 + 2] = _v.z;
+      c[i * 3] = bd.c.r * fade; c[i * 3 + 1] = bd.c.g * fade; c[i * 3 + 2] = bd.c.b * fade;
+    }
+    burstGeo.attributes.position.needsUpdate = burstGeo.attributes.color.needsUpdate = true;
+  }
+
+  /* ---- reverse transcription trail ---- */
+  const trVis = ss(5.55, 5.9, t) * (1 - ss(7.3, 7.9, t));
+  trail.visible = trVis > 0.001;
+  if (trail.visible) {
+    const p = trailGeo.attributes.position.array, c = trailGeo.attributes.color.array;
+    const half = TRAIL / 2;
+    for (let i = 0; i < TRAIL; i++) {
+      const strand = i < half ? 0 : 1;
+      const s = ((i % half) / half) * u;
+      capsidPath(s, _v);
+      capsidPath(Math.min(s + 0.01, 1), _v2);
+      _t2.subVectors(_v2, _v).normalize();
+      _t1.crossVectors(_t2, UP).normalize();
+      _s.crossVectors(_t2, _t1);
+      const ang = s * 60 + strand * Math.PI - time * 1.4;
+      const behind = u - s;                         // how long ago this piece was copied
+      const conv = ss(0.0, 0.18, behind);          // 0 = RNA, 1 = DNA
+      _v.addScaledVector(_t1, Math.cos(ang) * 0.13).addScaledVector(_s, Math.sin(ang) * 0.13);
+      p[i * 3] = _v.x; p[i * 3 + 1] = _v.y; p[i * 3 + 2] = _v.z;
+      const k = trVis * (strand === 0 ? 1 : conv) * (s < u ? 1 : 0);
+      _v2.set(C.mag.r, C.mag.g, C.mag.b).lerp(_s.set(C.gold.r, C.gold.g, C.gold.b), conv);
+      c[i * 3] = _v2.x * k; c[i * 3 + 1] = _v2.y * k; c[i * 3 + 2] = _v2.z * k;
+    }
+    trailGeo.attributes.position.needsUpdate = trailGeo.attributes.color.needsUpdate = true;
+  }
+
+  /* ---- budding virions ---- */
+  buds.visible = t > 7.4;
+  if (buds.visible) {
+    for (let i = 0; i < BUDS; i++) {
+      const b = budData[i];
+      const e = clamp((t - b.birth) / 0.95);
+      const kill = 1 - ss(b.kill, b.kill + 0.35, t);
+      const s = ss(0, 0.18, e) * kill * b.s;
+      const r = R + 0.25 + Math.pow(e, 1.4) * b.dist;
+      _v.copy(b.dir).multiplyScalar(r);
+      _v.x += Math.sin(time * 0.6 + b.wob) * 0.3 * e;
+      _v.y += Math.cos(time * 0.5 + b.wob) * 0.3 * e;
+      _m.compose(_v, _q.identity(), _s.set(s, s, s).addScalar(0.0001));
+      buds.setMatrixAt(i, _m);
+    }
+    buds.instanceMatrix.needsUpdate = true;
+  }
+
+  /* ---- antiretroviral drugs ---- */
+  const dv = ss(8.6, 9.2, t) * (1 - ss(10.2, 10.8, t) * 0.6);
+  drugMat.uniforms.uOpacity.value = dv;
+  drugs.visible = dv > 0.001;
+  if (drugs.visible) {
+    const p = drugGeo.attributes.position.array;
+    const squeeze = lerp(1, 0.55, ss(8.9, 9.6, t)) * lerp(1, 1.6, ss(9.8, 10, t));
+    for (let i = 0; i < DRUGS; i++) {
+      const r = drugData[i * 4] * squeeze;
+      const th = drugData[i * 4 + 1] + time * drugData[i * 4 + 3];
+      const ph = drugData[i * 4 + 2];
+      p[i * 3] = r * Math.sin(ph) * Math.cos(th);
+      p[i * 3 + 1] = r * Math.cos(ph);
+      p[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+    }
+    drugGeo.attributes.position.needsUpdate = true;
+  }
+
+  /* ---- erythrocyte stream, flowing around the cell ---- */
+  const excl = lerp(6.8, 10.5, ss(1.2, 2.2, t) * (1 - ss(8.0, 9.0, t)));
+  const M = excl + 3.5;
+  for (let i = 0; i < RBC; i++) {
+    const b = rbcData[i];
+    b.p.x += b.speed * dt;
+    if (b.p.x > 70) { b.p.x -= 140; b.p.y = rr(-26, 26); b.p.z = rr(-55, 24); }
+    _v.copy(b.p);
+    _v.y += Math.sin(time * 0.4 + b.phase) * 0.6;
+    const len = _v.length();
+    let s = b.s;
+    if (len < M) {
+      _v.multiplyScalar((excl + (len / M) * 3.5) / Math.max(len, 0.001));
+      s *= ss(0.15, 0.6, len / M) * 0.7 + 0.3;
+    }
+    _q.setFromAxisAngle(b.axis, time * b.spin + b.phase);
+    _m.compose(_v, _q, _s.set(s, s, s));
+    rbc.setMatrixAt(i, _m);
+  }
+  rbc.instanceMatrix.needsUpdate = true;
+
+  /* ---- post ---- */
+  bloom.strength = 0.7 + f3 * 0.45 + nucFlash * 0.4;
+  lensPass.uniforms.uAmt.value = 0.012 + f3 * 0.03;
+}
+
+/* =========================================================
+   loop
+   ========================================================= */
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.fov = w < h ? 55 : 42;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  readScroll();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const clock = new THREE.Clock();
+let time = 0, first = true;
+function frame() {
+  const raw = clock.getDelta();
+  const dt = Math.min(raw, 0.05);
+  time += dt * (reduceMotion ? 0.35 : 1);
+  shared.uTime.value = time;
+  tNow += (tTarget - tNow) * (1 - Math.exp(-Math.min(raw, 0.25) * (reduceMotion ? 8 : 3.2)));
+  if (Math.abs(tTarget - tNow) < 1e-4) tNow = tTarget;
+
+  update(tNow, time, dt);
+  updateUI(tNow, time);
+  composer.render();
+
+  if (first) { first = false; requestAnimationFrame(() => document.body.classList.add('ready')); }
+  requestAnimationFrame(frame);
+}
+readScroll();
+tNow = tTarget;
+frame();
