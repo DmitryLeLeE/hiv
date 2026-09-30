@@ -639,7 +639,7 @@ const KEYS = [
   { p: at(7.2, -3.6, 1.6, V()), t: at(0.5, 0, 0, V()) },
   { p: V(0, 5, 22), t: V(0, 0, 0) },
   { p: V(7, -2.5, 18.5), t: V(0, 0.4, 0) },
-  { p: V(0, 8, 44), t: V(0, 0, 0) },
+  { p: V(0, 8, 44), t: V(-11, 1, 0) },
 ];
 const LAST = KEYS.length - 1;
 const camCurve = new THREE.CatmullRomCurve3(KEYS.map((k) => k.p), false, 'centripetal');
