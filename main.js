@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { WORLD } from './map-data.js';
+import { buildZine, scrawl, xeroxDust, rng as seeded, penPath, subdivide } from './zine.js';
 
 /* =========================================================
    helpers
@@ -719,6 +720,9 @@ const stylePass = new ShaderPass({
 
     vec3 ascii(vec2 px, float cell){
       vec2 cs = vec2(cell, cell * 1.7);
+      // typewriter carriage: every row lands a little off
+      float row = floor(px.y / cs.y);
+      px.x += (hash(vec2(row, 3.1)) - 0.5) * cell * 0.6;
       vec2 id = floor(px / cs);
       float gl = step(0.85, hash(vec2(id.y, floor(uTime * 16.0)))) * uGlitch;
       id.x += floor((hash(vec2(id.y * 1.7, floor(uTime * 23.0))) - 0.5) * 18.0 * gl);
@@ -729,8 +733,11 @@ const stylePass = new ShaderPass({
          + texture2D(tDiffuse, c + vec2(o.x, -o.y)).rgb + texture2D(tDiffuse, c + vec2(-o.x, o.y)).rgb) * 0.15;
       float l = pow(smoothstep(0.02, 0.9, luma(s)), 1.15);
       float gi = floor(l * (uGlyphs - 0.001));
-      vec2 lp = fract(px / cs);
-      float g = texture2D(tGlyphs, vec2((gi + lp.x) / uGlyphs, lp.y)).r;
+      // each key strikes a bit off-centre and with its own amount of ink
+      vec2 lp = fract(px / cs) + (vec2(hash(id + 1.3), hash(id + 7.9)) - 0.5) * vec2(0.18, 0.12);
+      float g = texture2D(tGlyphs, vec2((gi + clamp(lp.x, 0.0, 1.0)) / uGlyphs, clamp(lp.y, 0.0, 1.0))).r;
+      g *= mix(0.45, 1.15, hash(id * 0.71 + 2.0));
+      g *= step(0.05, hash(id + floor(uTime * 0.5) * 0.37));
       // black & white: blood and virus are printed in inverse video (lit cell, black glyph)
       float r = redness(s);
       vec3 normal = uBone * g * (0.3 + 0.8 * l);
@@ -781,7 +788,12 @@ const stylePass = new ShaderPass({
       vec2 px = vUv * uRes;
       vec2 cs = vec2(uCell, uCell * 1.7);
       float dis = uMode > hash(floor(px / cs) + 0.37) ? 1.0 : 0.0;
+      // gate weave: the whole print shivers a pixel or two
+      float wf = floor(uTime * 12.0);
+      px += (vec2(hash(vec2(wf, 1.0)), hash(vec2(wf, 2.0))) - 0.5) * 2.2;
       vec3 col = dis > 0.5 ? engrave(px) : ascii(px, uCell);
+      // misregistered second pass of the copier
+      if (dis < 0.5) col += ascii(px + vec2(3.0, -2.0), uCell) * 0.22;
 
       // microscope lens under the cursor: the "true" specimen, magnified
       float dm = distance(px, uMouse);
@@ -798,6 +810,14 @@ const stylePass = new ShaderPass({
       }
 
       col = mix(col, uBone * 0.92 - col * 0.9, uInvert);
+      // film scratches and dust
+      float sf = floor(uTime * 5.0);
+      for (int k = 0; k < 2; k++) {
+        float sx = hash(vec2(sf, float(k) * 9.1)) * uRes.x;
+        float on = step(0.55, hash(vec2(sf, float(k) + 4.4)));
+        col += uBone * 0.35 * on * (1.0 - smoothstep(0.0, 1.2, abs(px.x - sx + sin(px.y * 0.01 + sf) * 3.0)));
+      }
+      col += uBone * 0.6 * step(0.99965, hash(floor(px / 3.0) + floor(uTime * 9.0)));
       col *= 1.0 - uDim * 0.65;
       col += (hash(px + fract(uTime) * 91.7) - 0.5) * 0.045;
       vec2 cc = vUv - 0.5;
@@ -942,6 +962,12 @@ const titles = [
   { el: document.getElementById('t3'), text: 'Н = Н', solo: true },
 ];
 const TITLE_FONT = (px) => `900 ${px}px "Playfair Display", "Times New Roman", serif`;
+// print each row slightly off-register and with uneven ink, like a worn stencil
+function renderTitle(t) {
+  const rows = t.chars.join('').split('\n');
+  if (!t.rowFx || t.rowFx.length !== rows.length) t.rowFx = rows.map(() => [(rand() - 0.5) * 7, 0.62 + rand() * 0.38]);
+  t.el.innerHTML = rows.map((row, i) => `<span class="ln" style="--x:${t.rowFx[i][0].toFixed(1)}px;--o:${t.rowFx[i][1].toFixed(2)}">${row || ' '}</span>`).join('');
+}
 function layoutTitles() {
   const cv = document.createElement('canvas');
   const x = cv.getContext('2d', { willReadFrequently: true });
@@ -982,7 +1008,8 @@ function layoutTitles() {
       t.chars.push('\n');
     }
     t.el.style.fontSize = `${fontPx}px`;
-    t.el.textContent = t.chars.join('');
+    t.rowFx = null;
+    renderTitle(t);
   });
 }
 if (document.fonts && document.fonts.load) {
@@ -996,7 +1023,7 @@ function mutateTitles() {
   for (const t of titles) {
     if (!t.fill || !t.fill.length) continue;
     for (let k = 0; k < 6; k++) { const i = t.fill[(rand() * t.fill.length) | 0]; t.chars[i] = BASES[(rand() * 4) | 0]; }
-    t.el.textContent = t.chars.join('');
+    renderTitle(t);
   }
 }
 
@@ -1114,9 +1141,8 @@ function pickRbc() {
 CALLOUTS.forEach((c) => {
   c.g = document.createElementNS(SVGNS, 'g');
   if (c.blood) c.g.setAttribute('class', 'blood');
-  c.line = document.createElementNS(SVGNS, 'polyline');
-  c.dot = document.createElementNS(SVGNS, 'circle');
-  c.dot.setAttribute('r', '3');
+  c.line = document.createElementNS(SVGNS, 'path');
+  c.dot = document.createElementNS(SVGNS, 'path');
   c.g.append(c.line, c.dot);
   leaders.appendChild(c.g);
   c.el = document.createElement('div');
@@ -1142,8 +1168,12 @@ function updateCallouts(t) {
     const ex = ax + dir * 46, ey = ay + oy, fx = ex + dir * 70;
     c.g.style.display = ''; c.el.style.display = '';
     c.g.style.opacity = o; c.el.style.opacity = o;
-    c.line.setAttribute('points', `${ax},${ay} ${ex},${ey} ${fx},${ey}`);
-    c.dot.setAttribute('cx', ax); c.dot.setAttribute('cy', ay);
+    // pen line that "boils" a few times a second, like hand-drawn animation
+    const boil = Math.floor(performance.now() / 160);
+    const pr = seeded(boil * 97 + CALLOUTS.indexOf(c) * 13);
+    c.line.setAttribute('d', penPath(subdivide([[ax, ay], [ex, ey], [fx, ey]], 5), pr, 1.4));
+    const ang = Math.atan2(ay - ey, ax - ex), hl = 11;
+    c.dot.setAttribute('d', `M${ax - Math.cos(ang - 0.5) * hl} ${ay - Math.sin(ang - 0.5) * hl} L${ax} ${ay} L${ax - Math.cos(ang + 0.45) * hl} ${ay - Math.sin(ang + 0.45) * hl}`);
     c.el.classList.toggle('l', dir < 0);
     // keep the label on screen
     const lw = c.el.offsetWidth || 120;
@@ -1159,7 +1189,7 @@ function updateCallouts(t) {
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v = V(), _v2 = V(), _s = V();
 const camPos = V(), camTgt = V(), _t1 = V(), _t2 = V();
 
-let capsidU = 0;
+let capsidU = 0, prevT = 0, invertAt = -99;
 function update(t, time, dt) {
   /* ---- camera ---- */
   const i0 = Math.min(Math.floor(t), LAST - 1);
@@ -1291,7 +1321,7 @@ function update(t, time, dt) {
   }
 
   /* ---- contact flash ---- */
-  const f1 = pulse(t, 3.0, 0.28), f2 = pulse(t, 3.95, 0.28), f3 = pulse(t, 5.05, 0.35);
+  const f1 = pulse(t, 3.0, 0.28), f2 = pulse(t, 3.95, 0.28), f3 = pulse(t, 4.72, 0.2);
   const fl = Math.max(f1, f2, f3);
   flashMat.opacity = clamp(fl) * (0.4 + Math.sin(time * 12) * 0.08);
   flashMat.color.copy(C.white).lerp(C.mag, clamp(f2 + f3 - f1));
@@ -1401,7 +1431,10 @@ function update(t, time, dt) {
 
   /* ---- post ---- */
   bloom.strength = 0.35 + f3 * 0.4 + nucFlash * 0.3;
-  styleU.uInvert.value = ss(0.55, 1.0, f3) * 0.92 + ss(0.6, 1, nucFlash) * 0.5;
+  // negative flash: a short strobe when the scroll crosses fusion / integration, not a held state
+  if ((prevT < 4.95 && t >= 4.95) || (prevT < 7.3 && t >= 7.3)) invertAt = performance.now() / 1000;
+  prevT = t;
+  styleU.uInvert.value = reduceMotion ? 0 : Math.exp(-(performance.now() / 1000 - invertAt) * 5) * 0.9;
   capsidU = u;
 }
 
@@ -1783,6 +1816,15 @@ function splitWords(el) {
 document.querySelectorAll('.card h2, .appx h2, .appx-h').forEach(splitWords);
 drawNumerals();
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawNumerals);
+buildZine({ chapters, appendices: [...document.querySelectorAll('.appx, .colophon')], isMobile });
+['s1', 's2', 's3'].forEach((id, k) => { const el = document.getElementById(id); if (el) scrawl(el, 40 + k * 11); });
+const dustEl = xeroxDust();
+let dustT = 0;
+function updateDust(time) {
+  if (reduceMotion || time - dustT < 0.11) return;
+  dustT = time;
+  dustEl.style.backgroundPosition = `${(Math.random() * 900) | 0}px ${(Math.random() * 900) | 0}px`;
+}
 document.querySelectorAll('.timeline li, .shields li').forEach((li, i, all) => li.style.setProperty('--i', [...li.parentElement.children].indexOf(li)));
 document.querySelectorAll('.gloss > *').forEach((el) => el.style.setProperty('--i', Math.floor([...el.parentElement.children].indexOf(el) / 2)));
 
@@ -1859,6 +1901,7 @@ function frame() {
   updateCallouts(tNow);
   updateDecode();
   updateTicker(time);
+  updateDust(time);
   updateStyle(time, dt, Math.min(raw, 0.25));
   updateAppendix(raw < 0.5 ? raw : 0.05);
   updateInfographics(time, raw < 0.5 ? raw : 0.05);
