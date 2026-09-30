@@ -1526,8 +1526,15 @@ function renderCourse(p) {
 courseEl.closest('.appx').onReveal = () => { if (courseAnim === 0) courseAnim = 0.0001; };
 document.querySelectorAll('[data-course]').forEach((b) => b.addEventListener('click', () => {
   courseMode = +b.dataset.course;
-  document.querySelectorAll('[data-course]').forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
-  courseAnim = 0.0001; glitch = Math.max(glitch, 0.5);
+  document.querySelectorAll('[data-course]').forEach((x) => {
+    const on = x === b;
+    x.classList.toggle('on', on);
+    x.setAttribute('aria-pressed', on);
+  });
+  courseLast = -1;
+  courseAnim = 1;         // Ставим сразу 1, чтобы не ждать перерисовки
+  renderCourse(1);        // Мгновенно отрисовываем выбранный график
+  glitch = Math.max(glitch, 0.5);
 }));
 renderCourse(0);
 
@@ -1714,8 +1721,15 @@ function renderCascade(p) {
 }
 document.querySelectorAll('[data-cascade]').forEach((b) => b.addEventListener('click', () => {
   casMode = +b.dataset.cascade;
-  document.querySelectorAll('[data-cascade]').forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
-  casAnim = 0.0001; glitch = Math.max(glitch, 0.4);
+  document.querySelectorAll('[data-cascade]').forEach((x) => {
+    const on = x === b;
+    x.classList.toggle('on', on);
+    x.setAttribute('aria-pressed', on);
+  });
+  casLast = -1;
+  casAnim = 1;            // Мгновенный показ 95-90-86 вместо отката к 0
+  renderCascade(1);       // Сразу перерисовываем фигурки и числа
+  glitch = Math.max(glitch, 0.4);
 }));
 cascadeEl.closest('.appx').onReveal = () => { if (casAnim === 0) casAnim = 0.0001; };
 renderCascade(0);
