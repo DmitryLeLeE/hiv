@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Кровь и Вирусы — 3D-атлас</title>
-  <meta name="description" content="Интерактивный 3D-атлас: как ВИЧ находит CD4 T-лимфоцит, проникает в него, мутирует — и как его останавливает антиретровирусная терапия." />
+  <title>Кровь и Вирусы — атлас</title>
+  <meta name="description" content="Мрачный интерактивный 3D-атлас в ASCII и гравюре: как ВИЧ находит CD4 T-лимфоцит, проникает в него, мутирует — и как его останавливает антиретровирусная терапия." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;800&family=Manrope:wght@300;400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500;1,700&family=Playfair+Display:wght@900&family=Spectral:ital,wght@0,300;0,400;1,300&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
     {
@@ -20,166 +20,339 @@
 </head>
 <body>
   <canvas id="scene" aria-hidden="true"></canvas>
-  <div class="grain" aria-hidden="true"></div>
+  <svg id="leaders" aria-hidden="true"></svg>
+  <div id="labels" aria-hidden="true"></div>
+  <div id="lensTag" aria-hidden="true">×400 · <i>sub microscopio</i></div>
 
-  <div id="loader"><span>ИНКУБАЦИЯ СЦЕНЫ</span><i></i></div>
+  <div id="loader"><pre id="loaderArt">[ . . . ]</pre><span>инкубация образца</span></div>
 
   <header class="hud-top">
-    <div class="brand"><b>HAEMA</b><span>/ атлас крови и вирусов</span></div>
-    <div class="scale" id="scale">масштаб условный · вирион ≈ 100 нм · эритроцит ≈ 7,5 мкм</div>
+    <div class="brand">
+      <b>HAEMA</b>
+      <span><i>atlas sanguinis et virorum</i> · том&nbsp;I</span>
+    </div>
+    <div class="modes" role="group" aria-label="Режим изображения">
+      <span>оптика:</span>
+      <button type="button" data-mode="0" class="on" aria-pressed="true">ascii</button>
+      <button type="button" data-mode="1" aria-pressed="false">гравюра</button>
+    </div>
   </header>
 
+  <div class="drip" aria-hidden="true"><i id="dripFill"></i><b id="dripDrop"></b></div>
   <nav class="rail" id="rail" aria-label="Главы"></nav>
 
   <div class="hud-load" id="hudLoad" aria-live="polite">
-    <span>вирусная нагрузка</span>
+    <span>вирусная нагрузка · копий РНК/мл</span>
     <b id="vl">—</b>
-    <em>копий РНК / мл</em>
+    <code id="vlBar"></code>
   </div>
+
+  <div class="scale" aria-hidden="true">масштаб условный · вирион ≈ 100&nbsp;нм · эритроцит ≈ 7,5&nbsp;мкм</div>
 
   <main id="story">
     <!-- 0 -->
-    <section class="chapter hero" data-title="Поток">
-      <div class="card hero-card">
-        <p class="kicker">интерактивный 3D-атлас</p>
-        <h1><span class="neon-red">Кровь</span><br />и&nbsp;<span class="neon-mag">вирусы</span></h1>
-        <p class="lead">В одном микролитре твоей крови — около пяти миллионов эритроцитов и&nbsp;несколько сотен CD4 T-лимфоцитов. Один из них сейчас станет мишенью.</p>
-        <p class="scroll-hint"><i></i> скролль вниз</p>
+    <section class="chapter hero" data-title="Поток" data-roman="I">
+      <div class="hero-card">
+        <p class="kicker">tabula I &nbsp;·&nbsp; sanguis</p>
+        <h1 class="sr">Кровь и вирусы</h1>
+        <pre class="ascii-title blood" id="t1" aria-hidden="true"></pre>
+        <pre class="ascii-title" id="t2" aria-hidden="true"></pre>
+        <p class="lead">В одном микролитре твоей крови — около пяти миллионов эритроцитов и&nbsp;несколько сотен CD4 T-лимфоцитов. <em>Один из&nbsp;них сейчас станет мишенью.</em></p>
+        <p class="scroll-hint"><span id="spin">|</span> листай вниз</p>
       </div>
     </section>
 
     <!-- 1 -->
-    <section class="chapter right" data-title="CD4 T-клетка">
+    <section class="chapter right" data-title="T-клетка" data-roman="II">
       <article class="card">
-        <p class="num">01</p>
-        <h2>CD4 T-лимфоцит — <span class="neon-cyan">дирижёр иммунитета</span></h2>
-        <p>Т-хелперы не убивают сами — они координируют: подсказывают B-клеткам, какие антитела делать, и&nbsp;«включают» киллеров. На&nbsp;их мембране торчат белки <b>CD4</b> — именно по&nbsp;ним ВИЧ узнаёт жертву.</p>
+        <p class="num">tab. II &nbsp;—&nbsp; <i>lymphocytus T auxiliaris</i></p>
+        <h2>CD4 T-лимфоцит — <em>дирижёр иммунитета</em></h2>
+        <p>Т-хелперы не&nbsp;убивают сами — они координируют: подсказывают B-клеткам, какие антитела делать, и&nbsp;«включают» киллеров. На&nbsp;их мембране торчат белки <b>CD4</b> — именно по&nbsp;ним ВИЧ узнаёт жертву.</p>
         <ul class="chips">
-          <li><b>500–1500</b> клеток/мкл — норма</li>
-          <li><b>&lt;200</b> — порог стадии СПИД</li>
+          <li>[ <b>500–1500</b> ] клеток/мкл — норма</li>
+          <li>[ <b>&lt;200</b> ] — порог стадии СПИД</li>
         </ul>
       </article>
     </section>
 
     <!-- 2 -->
-    <section class="chapter left" data-title="Вирион">
+    <section class="chapter left" data-title="Вирион" data-roman="III">
       <article class="card">
-        <p class="num">02</p>
-        <h2>Вирион ВИЧ: <span class="neon-mag">100&nbsp;нанометров</span> угрозы</h2>
+        <p class="num">tab. III &nbsp;—&nbsp; <i>virus immunodeficientiae humanae</i></p>
+        <h2>Вирион ВИЧ: <em class="blood">100&nbsp;нанометров</em> угрозы</h2>
         <p>Липидная оболочка, украденная у&nbsp;предыдущей клетки, внутри — конический капсид с&nbsp;двумя копиями РНК. Снаружи — шипы <b>Env</b> (тримеры gp120/gp41).</p>
         <div class="fact">
-          <span>факт</span>
-          <p>Шипов на&nbsp;удивление мало — в&nbsp;среднем около <b>14</b> на&nbsp;вирион (у&nbsp;гриппа их&nbsp;сотни). Редкие шипы хуже видны антителам — это одна из&nbsp;причин, почему вакцину так трудно сделать.</p>
+          <span>‡ nota bene</span>
+          <p>Шипов на&nbsp;удивление мало — в&nbsp;среднем около <b>14</b> на&nbsp;вирион (у&nbsp;гриппа их&nbsp;сотни). Редкие шипы хуже видны антителам — одна из&nbsp;причин, почему вакцину так трудно сделать.</p>
         </div>
       </article>
     </section>
 
     <!-- 3 -->
-    <section class="chapter right" data-title="Захват CD4">
+    <section class="chapter right" data-title="Захват CD4" data-roman="IV">
       <article class="card">
-        <p class="num">03</p>
-        <h2>Рукопожатие: <span class="neon-lime">gp120</span> + <span class="neon-cyan">CD4</span></h2>
+        <p class="num">tab. IV &nbsp;—&nbsp; <i>adhaesio</i></p>
+        <h2>Рукопожатие: <em>gp120</em> + <em>CD4</em></h2>
         <p>Субъединица gp120 касается CD4 — и&nbsp;весь шип меняет форму. Открывается спрятанный участок (петля V3), который до&nbsp;этого был недоступен для&nbsp;иммунитета.</p>
         <div class="fact">
-          <span>трюк вируса</span>
-          <p>Ключевой сайт связывания с&nbsp;CD4 утоплен в&nbsp;«каньон» и&nbsp;прикрыт гликановым щитом — сахарами самой клетки-хозяина. Для&nbsp;антител вирус выглядит почти как «своё».</p>
+          <span>‡ трюк вируса</span>
+          <p>Сайт связывания с&nbsp;CD4 утоплен в&nbsp;«каньон» и&nbsp;прикрыт гликановым щитом — сахарами самой клетки-хозяина. Для&nbsp;антител вирус выглядит почти как «своё».</p>
         </div>
       </article>
     </section>
 
     <!-- 4 -->
-    <section class="chapter left" data-title="Корецептор">
+    <section class="chapter left" data-title="Корецептор" data-roman="V">
       <article class="card">
-        <p class="num">04</p>
-        <h2>Второй ключ: <span class="neon-mag">CCR5</span> или CXCR4</h2>
+        <p class="num">tab. V &nbsp;—&nbsp; <i>coreceptor</i></p>
+        <h2>Второй ключ: <em class="blood">CCR5</em> или CXCR4</h2>
         <p>Одного CD4 мало. Раскрывшийся gp120 цепляется за&nbsp;корецептор — хемокиновый рецептор <b>CCR5</b> (чаще в&nbsp;начале инфекции) или&nbsp;<b>CXCR4</b> (на&nbsp;поздних стадиях).</p>
         <div class="fact">
-          <span>мутация-щит</span>
+          <span>‡ мутация-щит</span>
           <p>У&nbsp;~1% северных европейцев обе копии гена CCR5 несут делецию <b>Δ32</b> — рецептора на&nbsp;мембране нет, и&nbsp;R5-штаммы не&nbsp;могут войти. Пересадка костного мозга от&nbsp;такого донора вылечила «берлинского пациента» Тимоти Брауна.</p>
         </div>
       </article>
     </section>
 
     <!-- 5 -->
-    <section class="chapter right" data-title="Слияние">
+    <section class="chapter right" data-title="Слияние" data-roman="VI">
       <article class="card">
-        <p class="num">05</p>
-        <h2>Гарпун <span class="neon-lime">gp41</span> и&nbsp;слияние мембран</h2>
+        <p class="num">tab. VI &nbsp;—&nbsp; <i>fusio membranarum</i></p>
+        <h2>Гарпун <em>gp41</em> и&nbsp;слияние мембран</h2>
         <p>gp41 выстреливает слитый пептид в&nbsp;мембрану клетки, а&nbsp;затем складывается пополам, как&nbsp;застёжка-молния, в&nbsp;«шестиспиральный пучок». Мембраны стягиваются — и&nbsp;сливаются в&nbsp;одну.</p>
+        <pre class="diagram" aria-label="Схема: gp41 стягивает мембраны">
+  вирус  ════════╗  ╔════════
+                 ║▒▒║   gp41: 6-спиральный
+  клетка ════════╝  ╚════════    пучок</pre>
         <ul class="chips">
-          <li><b>энфувиртид</b> — блокирует «молнию» gp41</li>
-          <li><b>маравирок</b> — закрывает CCR5</li>
+          <li>[ <b>энфувиртид</b> ] блокирует «молнию» gp41</li>
+          <li>[ <b>маравирок</b> ] закрывает CCR5</li>
         </ul>
       </article>
     </section>
 
     <!-- 6 -->
-    <section class="chapter left" data-title="Обратная транскрипция">
+    <section class="chapter left" data-title="Транскрипция" data-roman="VII">
       <article class="card">
-        <p class="num">06</p>
-        <h2>РНК → ДНК: <span class="neon-gold">обратная транскрипция</span></h2>
+        <p class="num">tab. VII &nbsp;—&nbsp; <i>transcriptio inversa</i></p>
+        <h2>РНК → ДНК: <em>обратная транскрипция</em></h2>
         <p>Капсид — конус из&nbsp;~1500 белков CA (≈250 гексамеров и&nbsp;ровно 12 пентамеров) — едет по&nbsp;микротрубочкам к&nbsp;ядру. Внутри фермент <b>обратная транскриптаза</b> переписывает РНК вируса в&nbsp;ДНК.</p>
+        <pre class="diagram" id="rtDiagram" aria-label="Анимация: РНК переписывается в ДНК"></pre>
         <div class="fact">
-          <span>свежие данные</span>
+          <span>‡ свежие данные</span>
           <p>Долго считалось, что капсид распадается в&nbsp;цитоплазме. Криоэлектронная томография показала: он&nbsp;протискивается через ядерную пору почти целым, а&nbsp;транскрипция завершается уже внутри ядра.</p>
         </div>
       </article>
     </section>
 
     <!-- 7 -->
-    <section class="chapter right" data-title="Интеграция">
+    <section class="chapter right" data-title="Интеграция" data-roman="VIII">
       <article class="card">
-        <p class="num">07</p>
-        <h2>Интеграза вшивает <span class="neon-gold">провирус</span> в&nbsp;геном</h2>
+        <p class="num">tab. VIII &nbsp;—&nbsp; <i>integratio</i></p>
+        <h2>Интеграза вшивает <em class="blood">провирус</em> в&nbsp;геном</h2>
         <p>Фермент <b>интеграза</b> разрезает ДНК клетки и&nbsp;встраивает туда вирусную. С&nbsp;этого момента ВИЧ — часть генома: при&nbsp;каждом делении клетка копирует его сама.</p>
         <div class="fact">
-          <span>почему нет лекарства</span>
+          <span>‡ почему нет лекарства</span>
           <p>Часть заражённых клеток памяти «засыпает» с&nbsp;провирусом внутри — это <b>латентный резервуар</b>. Таблетки его не&nbsp;видят. Период полураспада резервуара ~44 месяца: чтобы он&nbsp;исчез сам, нужно больше 70 лет терапии.</p>
         </div>
       </article>
     </section>
 
     <!-- 8 -->
-    <section class="chapter left" data-title="Мутации">
+    <section class="chapter left" data-title="Мутации" data-roman="IX">
       <article class="card">
-        <p class="num">08</p>
-        <h2>Почему вирус <span class="neon-mag">так быстро мутирует</span></h2>
+        <p class="num">tab. IX &nbsp;—&nbsp; <i>mutatio</i></p>
+        <h2>Почему вирус <em class="blood">так быстро мутирует</em></h2>
         <p>У&nbsp;обратной транскриптазы нет «корректуры»: она ошибается примерно раз на&nbsp;30&nbsp;000 нуклеотидов. Геном ВИЧ — ~9700 букв, так что почти каждая третья новая копия несёт мутацию.</p>
         <pre class="genome" id="genome" aria-label="Анимация мутирующей последовательности"></pre>
         <ul class="chips">
-          <li><b>~10¹⁰</b> вирионов в&nbsp;сутки без терапии</li>
-          <li><b>каждая</b> точечная мутация возникает ежедневно</li>
-          <li><b>рекомбинация</b> между двумя копиями РНК</li>
+          <li>[ <b>~10¹⁰</b> ] вирионов в&nbsp;сутки без терапии</li>
+          <li>[ <b>каждая</b> ] точечная мутация — ежедневно</li>
+          <li>[ <b>рекомбинация</b> ] двух копий РНК</li>
         </ul>
       </article>
     </section>
 
     <!-- 9 -->
-    <section class="chapter right" data-title="АРТ">
+    <section class="chapter right" data-title="АРТ" data-roman="X">
       <article class="card">
-        <p class="num">09</p>
-        <h2>Антиретровирусная терапия: <span class="neon-gold">удар со&nbsp;всех сторон</span></h2>
+        <p class="num">tab. X &nbsp;—&nbsp; <i>therapia antiretroviralis</i></p>
+        <h2>Антиретровирусная терапия: <em>удар со&nbsp;всех сторон</em></h2>
         <p>Против одного препарата вирус подберёт мутацию за&nbsp;недели. Против <b>комбинации</b> из&nbsp;2–3 классов сразу — нужно несколько редких мутаций одновременно в&nbsp;одном геноме. Шанс почти нулевой.</p>
-        <ul class="targets">
-          <li><i class="c-lime"></i><b>вход</b> — маравирок, фостемсавир, ибализумаб</li>
-          <li><i class="c-gold"></i><b>обратная транскриптаза</b> — тенофовир, эмтрицитабин (НИОТ), доравирин (ННИОТ)</li>
-          <li><i class="c-cyan"></i><b>интеграза</b> — долутегравир, биктегравир</li>
-          <li><i class="c-mag"></i><b>протеаза</b> — дарунавир: новые вирионы не&nbsp;созревают</li>
-          <li><i class="c-red"></i><b>капсид</b> — ленакапавир, укол раз в&nbsp;полгода</li>
-        </ul>
+        <pre class="diagram cycle" aria-label="Жизненный цикл ВИЧ и точки удара препаратов">
+ вход ─▶ обр.транскр. ─▶ интеграция ─▶ созревание
+  ╳          ╳              ╳             ╳
+ маравирок  тенофовир     долутегравир  дарунавир
+ фостемсавир доравирин    биктегравир
+ ──────────────────────────────────────────────
+ капсид ╳ ленакапавир — укол раз в полгода</pre>
       </article>
     </section>
 
     <!-- 10 -->
-    <section class="chapter finale" data-title="Н = Н">
-      <div class="card hero-card">
-        <p class="kicker">финал</p>
-        <h2 class="big"><span class="neon-cyan">Н&nbsp;=&nbsp;Н</span></h2>
+    <section class="chapter finale" data-title="Н = Н" data-roman="XI">
+      <div class="hero-card">
+        <p class="kicker">tabula XI &nbsp;·&nbsp; finis</p>
+        <h2 class="sr">Н = Н</h2>
+        <pre class="ascii-title" id="t3" aria-hidden="true"></pre>
         <p class="lead"><b>Неопределяемый = Непередающий.</b> Если терапия держит вирусную нагрузку ниже порога определения, ВИЧ не&nbsp;передаётся половым путём — это показали исследования PARTNER на&nbsp;тысячах пар. Люди с&nbsp;ВИЧ на&nbsp;терапии живут почти столько&nbsp;же, сколько все остальные.</p>
         <p class="small">Атлас — научно-популярная визуализация, не&nbsp;медицинская консультация. Тестирование и&nbsp;лечение — у&nbsp;врача-инфекциониста.</p>
-        <button class="again" id="again">↑ ещё раз через поток</button>
+        <button class="again" id="again">[ ↑ ещё раз через поток ]</button>
       </div>
     </section>
+
+    <!-- ================= APPENDICES ================= -->
+    <div class="appx-intro" id="appendix">
+      <pre class="rule" aria-hidden="true">──────────────────────────── ✝ ────────────────────────────</pre>
+      <p class="kicker">appendices &nbsp;·&nbsp; приложения к атласу</p>
+      <h2 class="appx-h">Всё остальное, что нужно знать о&nbsp;ВИЧ</h2>
+      <p class="lead">Клетка спасена — дальше архив: как болезнь развивается во&nbsp;времени, как передаётся и&nbsp;как не&nbsp;передаётся, как защититься, провериться и&nbsp;что говорят цифры.</p>
+    </div>
+
+    <!-- A -->
+    <section class="appx" data-title="Течение" data-roman="A">
+      <p class="num">appendix A &nbsp;—&nbsp; <i>historia naturalis morbi</i></p>
+      <h2>Течение инфекции: <em>годы тишины</em></h2>
+      <p>Без лечения ВИЧ почти не&nbsp;даёт о&nbsp;себе знать годами — но&nbsp;каждый день уничтожает CD4-клетки. Когда их&nbsp;становится меньше 200 в&nbsp;микролитре, иммунитет перестаёт сдерживать оппортунистические инфекции — это стадия СПИД. Переключи график и&nbsp;посмотри, что меняет терапия.</p>
+      <div class="course-ctl" role="group" aria-label="Сценарий графика">
+        <button type="button" data-course="0" class="on" aria-pressed="true">без терапии</button>
+        <button type="button" data-course="1" aria-pressed="false">АРТ со&nbsp;2-го года</button>
+      </div>
+      <pre class="plot" id="course" aria-label="ASCII-график: число CD4-клеток и вирусная нагрузка по годам"></pre>
+      <p class="legend"><span class="d">█</span> CD4, клеток/мкл (слева) &nbsp;&nbsp; <span class="m">•</span> вирусная нагрузка, log₁₀ копий/мл (справа) &nbsp;&nbsp; <span>- - -</span> порог СПИД (200)</p>
+      <div class="grid3">
+        <div><b>0–3 месяца · острая фаза</b><p>Взрыв репликации, миллионы копий вируса в&nbsp;мл. У&nbsp;многих — «грипп»: температура, сыпь, увеличенные лимфоузлы. Заразность максимальная, а&nbsp;тесты на&nbsp;антитела могут быть ещё отрицательными.</p></div>
+        <div><b>годы · бессимптомная стадия</b><p>Иммунитет устанавливает «точку равновесия» нагрузки. Самочувствие нормальное, но&nbsp;CD4 медленно падают — в&nbsp;среднем 8–10 лет до&nbsp;СПИДа без лечения.</p></div>
+        <div><b>&lt;200 CD4 · СПИД</b><p>Пневмоцистная пневмония, туберкулёз, кандидоз, саркома Капоши, токсоплазмоз мозга. Даже на&nbsp;этой стадии АРТ способна восстановить иммунитет.</p></div>
+      </div>
+    </section>
+
+    <!-- B -->
+    <section class="appx" data-title="Хроника" data-roman="B">
+      <p class="num">appendix B &nbsp;—&nbsp; <i>chronica</i></p>
+      <h2>Хроника: от&nbsp;пяти случаев <em>до&nbsp;укола раз в&nbsp;полгода</em></h2>
+      <ol class="timeline">
+        <li><time>1981</time><p>В&nbsp;бюллетене CDC описаны пять молодых мужчин из&nbsp;Лос-Анджелеса с&nbsp;редкой пневмоцистной пневмонией. Так мир узнаёт о&nbsp;новой болезни.</p></li>
+        <li><time>1983</time><p>Франсуаза Барре-Синусси и&nbsp;Люк Монтанье в&nbsp;Институте Пастера выделяют вирус. В&nbsp;2008-м — Нобелевская премия.</p></li>
+        <li><time>1985</time><p>Первый тест на&nbsp;антитела. Начинают проверять донорскую кровь.</p></li>
+        <li><time>1986</time><p>Вирус получает имя: <i>HIV</i>, вирус иммунодефицита человека.</p></li>
+        <li><time>1987</time><p>Первый препарат — зидовудин (AZT). В&nbsp;том&nbsp;же году в&nbsp;СССР выявлен первый случай ВИЧ у&nbsp;советского гражданина.</p></li>
+        <li><time>1994</time><p>Исследование ACTG 076: зидовудин во&nbsp;время беременности примерно на&nbsp;две трети снижает передачу вируса ребёнку.</p></li>
+        <li class="hi"><time>1996</time><p>Эра комбинированной терапии (ВААРТ) с&nbsp;ингибиторами протеазы. Смертность от&nbsp;СПИДа в&nbsp;богатых странах обрушивается.</p></li>
+        <li><time>2007</time><p>«Берлинский пациент» Тимоти Браун получает стволовые клетки донора с&nbsp;CCR5-Δ32 и&nbsp;становится первым излеченным от&nbsp;ВИЧ.</p></li>
+        <li><time>2011</time><p>HPTN 052: ранняя АРТ снижает передачу партнёру на&nbsp;96%. Лечение — это и&nbsp;есть профилактика.</p></li>
+        <li><time>2012</time><p>Первая таблетка для&nbsp;доконтактной профилактики (ПрЭП) одобрена в&nbsp;США.</p></li>
+        <li class="hi"><time>2016</time><p>Консенсус «Н&nbsp;=&nbsp;Н»: неопределяемая вирусная нагрузка — вирус не&nbsp;передаётся.</p></li>
+        <li><time>2019</time><p>«Лондонский пациент» — второй случай ремиссии после пересадки.</p></li>
+        <li class="hi"><time>2025</time><p>Ленакапавир одобрен для&nbsp;ПрЭП — два укола в&nbsp;год. В&nbsp;исследовании PURPOSE&nbsp;1 среди женщин на&nbsp;нём не&nbsp;было ни&nbsp;одного заражения.</p></li>
+      </ol>
+    </section>
+
+    <!-- C -->
+    <section class="appx" data-title="Передача" data-roman="C">
+      <p class="num">appendix C &nbsp;—&nbsp; <i>viae transmissionis</i></p>
+      <h2>Как передаётся — <em>и&nbsp;как нет</em></h2>
+      <p>ВИЧ хрупок: вне организма он&nbsp;быстро теряет заразность. Для&nbsp;заражения нужно, чтобы кровь, сперма, вагинальный секрет или грудное молоко человека с&nbsp;определяемой нагрузкой попали на&nbsp;слизистую или прямо в&nbsp;кровь.</p>
+      <div class="two">
+        <pre class="tbl blood-t" aria-label="Пути передачи">
+┌─ ПЕРЕДАЁТСЯ ──────────────────┐
+│ ▪ секс без презерватива       │
+│ ▪ общие иглы и шприцы         │
+│ ▪ от матери ребёнку: при      │
+│   беременности, родах,        │
+│   грудном вскармливании       │
+│ ▪ непроверенная донорская     │
+│   кровь (сегодня — редкость)  │
+└───────────────────────────────┘</pre>
+        <pre class="tbl" aria-label="Не передаётся">
+┌─ НЕ ПЕРЕДАЁТСЯ ───────────────┐
+│ ▫ поцелуи, объятия, касания   │
+│ ▫ общая посуда, еда, полотенце│
+│ ▫ бассейн, баня, туалет       │
+│ ▫ слюна, пот, слёзы           │
+│ ▫ укусы комаров и клещей      │
+│ ▫ воздушно-капельно           │
+└───────────────────────────────┘</pre>
+      </div>
+      <div class="fact"><span>‡ главное</span><p>Человек с&nbsp;ВИЧ на&nbsp;эффективной терапии и&nbsp;с&nbsp;неопределяемой нагрузкой не&nbsp;передаёт вирус половым путём. А&nbsp;при лечении матери риск передачи ребёнку падает с&nbsp;15–45% до&nbsp;долей процента.</p></div>
+    </section>
+
+    <!-- D -->
+    <section class="appx" data-title="Защита" data-roman="D">
+      <p class="num">appendix D &nbsp;—&nbsp; <i>praeventio</i></p>
+      <h2>Как защититься: <em>пять щитов</em></h2>
+      <ol class="shields">
+        <li><b>Презерватив</b><p>Дешёвый, доступный, защищает ещё и&nbsp;от&nbsp;других ИППП.</p></li>
+        <li><b>ПрЭП</b> <span>доконтактная профилактика</span><p>Таблетки для&nbsp;ВИЧ-отрицательных людей: ежедневно или по&nbsp;схеме «2-1-1» (для&nbsp;некоторых групп), либо инъекции раз в&nbsp;2 или&nbsp;6 месяцев. При правильном приёме снижает риск заражения половым путём примерно на&nbsp;99%.</p></li>
+        <li><b>ПКП</b> <span>постконтактная профилактика</span><p>Если риск уже был — курс АРТ на&nbsp;28 дней. Начать нужно как можно раньше, <b>не&nbsp;позже 72 часов</b>. Обращаться в&nbsp;СПИД-центр, инфекционную больницу или приёмный покой.</p></li>
+        <li><b>Н&nbsp;=&nbsp;Н</b><p>Лечение партнёра с&nbsp;ВИЧ до&nbsp;неопределяемой нагрузки — самая надёжная защита в&nbsp;паре.</p></li>
+        <li><b>Своя игла</b><p>Только стерильные одноразовые иглы и&nbsp;шприцы; программы снижения вреда спасают жизни.</p></li>
+      </ol>
+    </section>
+
+    <!-- E -->
+    <section class="appx" data-title="Тест" data-roman="E">
+      <p class="num">appendix E &nbsp;—&nbsp; <i>diagnosis</i></p>
+      <h2>Тест и&nbsp;<em>«окно»</em></h2>
+      <p>Сразу после заражения тест может быть отрицательным: организм ещё не&nbsp;выработал то, что ищет анализ. Этот период называют <b>серонегативным окном</b>.</p>
+      <pre class="plot window" id="windowPlot" aria-label="Периоды окна для разных типов тестов">
+дни после риска  0    10   20   30   40   50   60   70   80   90
+                 ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+ПЦР (РНК вируса) ░░░░░████████                                   10–33 дня
+ИФА 4-го пок.    ░░░░░░░░░██████████████                         18–45 дней
+экспресс/антит.  ░░░░░░░░░░░░██████████████████████████████████  23–90 дней
+                 ░ тест ещё «слеп»   █ когда большинство выявляется</pre>
+      <div class="grid3">
+        <div><b>Где</b><p>Во&nbsp;многих странах тест бесплатный и&nbsp;может быть анонимным: СПИД-центры, поликлиники, НКО, мобильные пункты.</p></div>
+        <div><b>Самотест</b><p>Экспресс-тест по&nbsp;слюне или капле крови из&nbsp;пальца дома — результат за&nbsp;15–20 минут. Положительный результат нужно подтвердить в&nbsp;лаборатории.</p></div>
+        <div><b>Как часто</b><p>CDC советует каждому в&nbsp;возрасте 13–64 лет пройти тест хотя&nbsp;бы раз, а&nbsp;при рисках — ежегодно или чаще.</p></div>
+      </div>
+    </section>
+
+    <!-- F -->
+    <section class="appx" data-title="Цифры" data-roman="F">
+      <p class="num">appendix F &nbsp;—&nbsp; <i>numeri</i></p>
+      <h2>Эпидемия в&nbsp;цифрах <em>(UNAIDS, 2023)</em></h2>
+      <pre class="plot bars" id="bars" aria-label="Глобальная статистика ВИЧ за 2023 год"></pre>
+      <p class="small">С&nbsp;начала эпидемии ВИЧ заразились около 88&nbsp;млн человек, более 42&nbsp;млн умерли от&nbsp;болезней, связанных со&nbsp;СПИДом. Смертность с&nbsp;пика 2004 года снизилась примерно на&nbsp;две трети.</p>
+    </section>
+
+    <!-- G -->
+    <section class="appx" data-title="Словарь" data-roman="G">
+      <p class="num">appendix G &nbsp;—&nbsp; <i>glossarium</i></p>
+      <h2>Словарь</h2>
+      <dl class="gloss">
+        <dt>АРТ</dt><dd>антиретровирусная терапия — пожизненная комбинация препаратов, подавляющая размножение ВИЧ.</dd>
+        <dt>CD4</dt><dd>белок на&nbsp;T-хелперах; число CD4-клеток — главный показатель состояния иммунитета.</dd>
+        <dt>Вирусная нагрузка</dt><dd>количество копий РНК вируса в&nbsp;мл крови. Цель терапии — «неопределяемая» (обычно &lt;50).</dd>
+        <dt>Провирус</dt><dd>ДНК вируса, встроенная в&nbsp;геном клетки.</dd>
+        <dt>Резервуар</dt><dd>спящие клетки с&nbsp;провирусом, недосягаемые для&nbsp;АРТ. Главное препятствие к&nbsp;излечению.</dd>
+        <dt>ПрЭП / ПКП</dt><dd>профилактика до&nbsp;и&nbsp;после возможного контакта с&nbsp;вирусом.</dd>
+        <dt>Резистентность</dt><dd>мутации, при&nbsp;которых препарат перестаёт действовать. Причина — пропуски таблеток и&nbsp;монотерапия.</dd>
+        <dt>СПИД</dt><dd>синдром приобретённого иммунодефицита — поздняя стадия ВИЧ-инфекции.</dd>
+      </dl>
+    </section>
+
+    <!-- sources -->
+    <footer class="colophon" id="sources">
+      <pre class="rule" aria-hidden="true">──────────────────────────── ✝ ────────────────────────────</pre>
+      <p class="num">fontes &nbsp;—&nbsp; источники</p>
+      <ol class="sources">
+        <li>UNAIDS. Global HIV &amp; AIDS statistics — fact sheet, 2024 (данные за 2023 г.).</li>
+        <li>CDC. HIV testing: window periods; MMWR 1981;30:250–252 (первое описание).</li>
+        <li>WHO. HIV — fact sheets; рекомендации по ПрЭП и тестированию.</li>
+        <li>Zhu P. et al. Distribution and three-dimensional structure of AIDS virus envelope spikes. <i>Nature</i>, 2006.</li>
+        <li>Mansky L. M., Temin H. M. Lower in vivo mutation rate of HIV-1 than that predicted from the fidelity of purified reverse transcriptase. <i>J Virol</i>, 1995.</li>
+        <li>Siliciano J. D. et al. Long-term follow-up studies confirm the stability of the latent reservoir for HIV-1. <i>Nat Med</i>, 2003.</li>
+        <li>Zila V. et al. Cone-shaped HIV-1 capsids are transported through intact nuclear pores. <i>Cell</i>, 2021.</li>
+        <li>Rodger A. J. et al. PARTNER / PARTNER2. <i>JAMA</i> 2016; <i>Lancet</i> 2019.</li>
+        <li>Cohen M. S. et al. HPTN 052. <i>NEJM</i>, 2011.</li>
+        <li>Bekker L.-G. et al. Twice-yearly lenacapavir for HIV prevention (PURPOSE 1). <i>NEJM</i>, 2024.</li>
+        <li>Hütter G. et al. Long-term control of HIV by CCR5 Delta32/Delta32 stem-cell transplantation. <i>NEJM</i>, 2009.</li>
+      </ol>
+      <p class="small">HAEMA · atlas sanguinis et virorum · научно-популярная визуализация, не&nbsp;медицинская консультация. Масштаб и&nbsp;цвета условны.</p>
+      <button class="again" id="again2">[ ↑ в&nbsp;начало потока ]</button>
+    </footer>
   </main>
 
   <noscript><p class="nojs">Для атласа нужен JavaScript и WebGL.</p></noscript>
