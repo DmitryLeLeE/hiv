@@ -1886,8 +1886,19 @@ function updateTicker(time) {
   tickerEl.innerHTML = "5'-" + tickSeq.map(([b, m]) => (m ? `<span class="m">${b}</span>` : b)).join('') + "-3'";
 }
 
+/* charts run on their own wall-clock loop, so a slow 3D frame can never stall them mid-animation */
+let chartLast = performance.now();
+function chartLoop(now) {
+  const dt = Math.min(1, Math.max(0, (now - chartLast) / 1000));
+  chartLast = now;
+  updateAppendix(dt);
+  updateInfographics(now / 1000, dt);
+  requestAnimationFrame(chartLoop);
+}
+requestAnimationFrame(chartLoop);
+
 const clock = new THREE.Clock();
-let time = 0, first = true;
+let time = 0, first = true, frameNo = 0;
 function frame() {
   const raw = clock.getDelta();
   const dt = Math.min(raw, 0.05);
@@ -1903,9 +1914,9 @@ function frame() {
   updateTicker(time);
   updateDust(time);
   updateStyle(time, dt, Math.min(raw, 0.25));
-  updateAppendix(raw < 0.5 ? raw : 0.05);
-  updateInfographics(time, raw < 0.5 ? raw : 0.05);
-  composer.render();
+  // behind the archive the specimen is dimmed: redraw it less often so the page stays light
+  frameNo++;
+  if (styleU.uDim.value < 0.9 || frameNo % 4 === 0) composer.render();
 
   if (first) {
     first = false;
