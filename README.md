@@ -45,7 +45,7 @@ python3 -m http.server 8000
 ## Файлы
 
 - `index.html` — таблицы, приложения, источники
-- `style.css` — типографика (Cormorant Garamond, Spectral, IBM Plex Mono, Playfair Display), HUD, мобильная вёрстка
+- `style.css` — типографика (Oranienbaum, Old Standard TT, Martian Mono; Playfair Display только для ASCII-заголовков), HUD, мобильная вёрстка
 - `main.js` — сцена, шейдеры, пост-процесс ASCII/гравюры, выноски, ASCII-графики
 
 Масштаб условный: настоящий вирион (~100 нм) примерно в 75 раз меньше эритроцита.

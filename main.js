@@ -677,7 +677,7 @@ function buildGlyphs() {
   const x = cv.getContext('2d');
   x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height);
   x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.font = `500 ${Math.round(gh * 0.74)}px "IBM Plex Mono", ui-monospace, monospace`;
+  x.font = `400 ${Math.round(gh * 0.62)}px "Martian Mono", ui-monospace, monospace`;
   for (let i = 0; i < RAMP.length; i++) x.fillText(RAMP[i], i * gw + gw / 2, gh * 0.54);
   const t = new THREE.CanvasTexture(cv);
   t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
@@ -829,7 +829,13 @@ function readScroll() {
   const y = window.scrollY + window.innerHeight / 2 - h / 2;
   tTarget = clamp(y / h, 0, LAST);
 }
-window.addEventListener('scroll', readScroll, { passive: true });
+let lastScrollY = window.scrollY;
+window.addEventListener('scroll', () => {
+  readScroll();
+  const dy = Math.abs(window.scrollY - lastScrollY);
+  lastScrollY = window.scrollY;
+  if (typeof glitch === 'number') glitch = Math.max(glitch, Math.min(0.7, dy / 500));
+}, { passive: true });
 
 const mouse = { x: 0, y: 0, sx: 0, sy: 0, px: -999, py: -999, fine: false };
 const lensTag = document.getElementById('lensTag');
@@ -853,6 +859,7 @@ function setMode(m) {
 modeBtns.forEach((b) => b.addEventListener('click', () => setMode(+b.dataset.mode)));
 try { const m = localStorage.getItem('haema-mode'); if (m === '1') { setMode(1); styleU.uMode.value = 1; } } catch (e) { /* storage blocked */ }
 
+let lensKey = '';
 function updateStyle(time, dt, mdt = dt) {
   styleU.uTime.value = time;
   const m = styleU.uMode.value;
@@ -865,7 +872,14 @@ function updateStyle(time, dt, mdt = dt) {
   styleU.uLens.value += (target - styleU.uLens.value) * Math.min(1, dt * 8);
   styleU.uMouse.value.set(mouse.px * pr, (window.innerHeight - mouse.py) * pr);
   document.body.classList.toggle('lens', lensOn);
-  if (lensOn) lensTag.style.transform = `translate(${mouse.px + 70}px, ${mouse.py + 74}px)`;
+  if (lensOn) {
+    lensTag.style.transform = `translate(${mouse.px + 70}px, ${mouse.py + 74}px)`;
+    const key = `${mouse.px | 0}:${mouse.py | 0}`;
+    if (key !== lensKey) {
+      lensKey = key;
+      lensTag.innerHTML = `×400 · x ${String(mouse.px | 0).padStart(4, '0')} y ${String(mouse.py | 0).padStart(4, '0')}<br><i>sub microscopio</i>`;
+    }
+  }
 }
 
 /* ---------- blood-drip progress ---------- */
@@ -903,12 +917,12 @@ function renderRT() {
   for (let k = 0; k < RT_W; k++) {
     const i = start + k;
     const here = i === rtHead;
-    top += here ? '▼ ' : '  ';
-    a += `<span class="m">${rna[i % rna.length]}</span>─`;
-    m += i < rtHead ? '│ ' : '  ';
-    bot += i < rtHead ? `<span class="d">${COMP[rna[i % rna.length]]}</span>─` : '··';
+    top += here ? '<span class="d">v</span> ' : '  ';
+    a += `<span class="m">${rna[i % rna.length]}</span>-`;
+    m += i < rtHead ? '| ' : '  ';
+    bot += i < rtHead ? `<span class="d">${COMP[rna[i % rna.length]]}</span>-` : '..';
   }
-  rtEl.innerHTML = `     ${top} обр. транскриптаза\nРНК 5'${a}\n      ${m}\nДНК 3'${bot}`;
+  rtEl.innerHTML = `      ${top}\nРНК 5'${a}3'\n      ${m}\nДНК 3'${bot}5'\n\n      <span class="d">v</span> — обратная транскриптаза, ${String(rtHead).padStart(4, '0')} нт`;
 }
 
 /* ---------- ASCII titles drawn from genome letters ---------- */
@@ -925,9 +939,12 @@ function layoutTitles() {
   const widths = titles.map((t) => x.measureText(t.text).width);
   const maxW = Math.max(widths[0], widths[1]);
   const box = titles[0].el.parentElement.clientWidth || 600;
-  const maxCols = window.innerWidth < 760 ? 78 : 150;
-  const fontPx = box / (maxCols * 0.6);
-  const ASPECT = 1 / 0.6;
+  const maxCols = window.innerWidth < 760 ? 70 : 132;
+  // real advance of the page's mono font, so the ASCII letters keep their proportions
+  x.font = `100px ${getComputedStyle(titles[0].el).fontFamily}`;
+  const ADV = clamp(x.measureText('M').width / 100, 0.5, 0.8);
+  const fontPx = box / (maxCols * ADV);
+  const ASPECT = 1 / ADV;
   titles.forEach((t, k) => {
     const cols = Math.max(8, Math.round(maxCols * (t.solo ? 0.62 : widths[k] / maxW)));
     const F = (100 * cols) / widths[k];
@@ -961,7 +978,7 @@ function layoutTitles() {
 if (document.fonts && document.fonts.load) {
   Promise.all([
     document.fonts.load(TITLE_FONT(100), 'Кровь'),
-    document.fonts.load('500 40px "IBM Plex Mono"', 'ACGU'),
+    document.fonts.load('400 40px "Martian Mono"', 'ACGUКровь'),
   ]).then(() => { layoutTitles(); styleU.tGlyphs.value = buildGlyphs(); }).catch(() => {});
 }
 let titleTick = 0;
@@ -1429,34 +1446,34 @@ function renderCourse(p) {
     const rv = rowOf(vlc(t, courseMode) / 6);
     if (rv >= 0 && rv < H) grid[rv][c] = ['•', 'm'];
     const rc = rowOf(cd4(t, courseMode) / 1200);
-    if (rc >= 0 && rc < H) grid[rc][c] = ['█', 'd'];
+    if (rc >= 0 && rc < H) grid[rc][c] = ['#', 'd'];
   }
   if (courseMode) {
     const c = Math.round((ART0 / YRS) * (W - 1));
-    for (let r = 0; r < H; r++) if (grid[r][c][0] === ' ') grid[r][c] = ['┊', 'm'];
+    for (let r = 0; r < H; r++) if (grid[r][c][0] === ' ') grid[r][c] = ['|', 'm'];
   }
   const lab = (r) => {
     const v = Math.round((1 - r / (H - 1)) * 1200);
-    return r % 2 === 0 ? String(v).padStart(4) + ' ┤' : '     │';
+    return r % 2 === 0 ? String(v).padStart(4) + ' +' : '     |';
   };
-  const labR = (r) => (r % 2 === 0 ? '├ 10^' + Math.round((1 - r / (H - 1)) * 6) : '│');
+  const labR = (r) => (r % 2 === 0 ? '+ 10^' + Math.round((1 - r / (H - 1)) * 6) : '|');
   let out = '';
   const phases = isMobile ? ' остр.  бессимптомно             СПИД' : ' острая   бессимптомная стадия                         СПИД';
-  out += '      ' + (courseMode ? ' ▼ АРТ' + ' '.repeat(Math.max(0, Math.round((ART0 / YRS) * W) - 6)) + 'нагрузка < 50 · CD4 восстанавливаются' : phases) + '\n';
+  out += '      ' + (courseMode ? ' v АРТ' + ' '.repeat(Math.max(0, Math.round((ART0 / YRS) * W) - 6)) + 'нагрузка < 50 · CD4 восстанавливаются' : phases) + '\n';
   for (let r = 0; r < H; r++) {
     let line = '';
     for (const [ch, cls] of grid[r]) line += cls ? `<span class="${cls}">${ch}</span>` : ch;
     out += lab(r) + line + labR(r) + '\n';
   }
-  let axis = '     └', ticks = '      ';
+  let axis = '     +', ticks = '      ';
   const tickCols = new Set();
   for (let yr = 0; yr <= YRS; yr += 2) tickCols.add(Math.round((yr / YRS) * (W - 1)));
-  for (let c = 0; c < W; c++) axis += tickCols.has(c) ? '┼' : '─';
+  for (let c = 0; c < W; c++) axis += tickCols.has(c) ? '+' : '-';
   for (let yr = 0; yr <= YRS; yr += 2) {
     const c = Math.round((yr / YRS) * (W - 1));
     ticks = ticks.padEnd(6 + c) + yr;
   }
-  out += axis + '┘\n' + ticks + '  лет';
+  out += axis + (tickCols.has(W - 1) ? '' : '+') + '\n' + ticks + '  лет';
   courseEl.innerHTML = out;
 }
 courseEl.closest('.appx').onReveal = () => { if (courseAnim === 0) courseAnim = 0.0001; };
@@ -1483,11 +1500,11 @@ function renderBars(p) {
   for (const [name, v, u, cls] of BARS) {
     const full = (v / 40) * W * p;
     const n = Math.floor(full);
-    const half = full - n > 0.5 ? '▌' : (v > 0 && n === 0 && p > 0.2 ? '▏' : '');
+    const half = full - n > 0.5 ? ':' : (v > 0 && n === 0 && p > 0.2 ? '|' : '');
     const val = (v * Math.min(1, p * 1.2)).toFixed(v < 1 ? 2 : 1).replace('.', ',');
-    out += `${name.padEnd(pad)}<span class="${cls}">${'█'.repeat(n)}${half}</span> ${val} ${u}\n`;
+    out += `${name.padEnd(pad)}<span class="${cls}">${'#'.repeat(n)}${half}</span> ${val} ${u}\n`;
   }
-  out += `${''.padEnd(pad)}${'└' + '─'.repeat(W - 1)}\n${''.padEnd(pad)}0${' '.repeat(W - 5)}40 млн`;
+  out += `${''.padEnd(pad)}${'+' + '-'.repeat(W - 1)}\n${''.padEnd(pad)}0${' '.repeat(W - 5)}40 млн`;
   barsEl.innerHTML = out;
 }
 barsEl.closest('.appx').onReveal = () => { if (barsAnim === 0) barsAnim = 0.0001; };
@@ -1506,6 +1523,96 @@ function updateAppendix(dt) {
   }
 }
 
+
+/* ---------- plate furniture: scanner line, roman watermark, word reveal ---------- */
+chapters.forEach((ch) => {
+  const card = ch.querySelector('.card');
+  if (!card) return;
+  const scan = document.createElement('i'); scan.className = 'scan'; scan.setAttribute('aria-hidden', 'true');
+  const wm = document.createElement('span'); wm.className = 'wm'; wm.textContent = ch.dataset.roman; wm.setAttribute('aria-hidden', 'true');
+  card.prepend(scan, wm);
+});
+function splitWords(el) {
+  let d = 0;
+  const walk = (node) => {
+    [...node.childNodes].forEach((n) => {
+      if (n.nodeType === 3) {
+        const frag = document.createDocumentFragment();
+        n.nodeValue.split(/(\s+)/).forEach((part) => {
+          if (!part) return;
+          if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); return; }
+          const w = document.createElement('span');
+          w.className = 'w'; w.style.setProperty('--d', d++); w.textContent = part;
+          frag.appendChild(w);
+        });
+        n.replaceWith(frag);
+      } else if (n.nodeType === 1) walk(n);
+    });
+  };
+  walk(el);
+}
+document.querySelectorAll('.card h2, .appx h2, .appx-h').forEach(splitWords);
+document.querySelectorAll('.timeline li, .shields li').forEach((li, i, all) => li.style.setProperty('--i', [...li.parentElement.children].indexOf(li)));
+document.querySelectorAll('.gloss > *').forEach((el) => el.style.setProperty('--i', Math.floor([...el.parentElement.children].indexOf(el) / 2)));
+
+/* decoding effect for mono captions: letters settle out of nucleotide noise */
+const SCRAMBLE = 'ACGU#%*+=:';
+function decode(el, dur = 900) {
+  if (reduceMotion) return;
+  const nodes = [];
+  const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  while (tw.nextNode()) if (tw.currentNode.nodeValue.trim()) nodes.push(tw.currentNode);
+  nodes.forEach((n) => { if (n.__o === undefined) n.__o = n.nodeValue; });
+  const at = nodes.map((n) => [...n.__o].map(() => Math.random() * 0.85));
+  const t0 = performance.now();
+  if (el.__raf) cancelAnimationFrame(el.__raf);
+  const step = (now) => {
+    const p = (now - t0) / dur;
+    nodes.forEach((n, k) => {
+      let s2 = '';
+      [...n.__o].forEach((c, i) => { s2 += /\s/.test(c) || p > at[k][i] ? c : SCRAMBLE[(Math.random() * SCRAMBLE.length) | 0]; });
+      n.nodeValue = s2;
+    });
+    if (p < 1) el.__raf = requestAnimationFrame(step);
+    else nodes.forEach((n) => { n.nodeValue = n.__o; });
+  };
+  el.__raf = requestAnimationFrame(step);
+}
+const decodeTargets = chapters.map((ch) => [...ch.querySelectorAll('.num, .kicker, .fact span')]);
+const wasIn = chapters.map(() => false);
+function updateDecode() {
+  chapters.forEach((ch, i) => {
+    const on = ch.classList.contains('in');
+    if (on && !wasIn[i]) decodeTargets[i].forEach((el, k) => setTimeout(() => decode(el), 250 + k * 120));
+    wasIn[i] = on;
+  });
+}
+document.querySelectorAll('.appx, .appx-intro, .colophon').forEach((el) => {
+  const prev = el.onReveal;
+  el.onReveal = () => { if (prev) prev(); if (!el.__decoded) { el.__decoded = true; el.querySelectorAll('.num, .kicker').forEach((n) => decode(n)); } };
+});
+
+/* ---------- ASCII virion in the archive intro ---------- */
+const appxVirionEl = document.getElementById('appxVirion');
+let stopAppxVirion = null;
+new IntersectionObserver((es) => es.forEach((e) => {
+  if (e.isIntersecting && !stopAppxVirion && window.asciiVirion) stopAppxVirion = window.asciiVirion(appxVirionEl, isMobile ? 40 : 56, isMobile ? 18 : 24);
+  else if (!e.isIntersecting && stopAppxVirion) { stopAppxVirion(); stopAppxVirion = null; }
+})).observe(appxVirionEl);
+
+/* ---------- running genome ticker ---------- */
+const tickerEl = document.getElementById('ticker');
+const TICK_W = 56;
+const tickSeq = Array.from({ length: TICK_W }, () => [BASES[(rand() * 4) | 0], false]);
+let tickT = 0;
+function updateTicker(time) {
+  if (isMobile || time - tickT < 0.09) return;
+  tickT = time;
+  tickSeq.shift();
+  tickSeq.push([BASES[(rand() * 4) | 0], rand() < 0.035]);
+  tickerEl.innerHTML = "5'-" + tickSeq.map(([b, m]) => (m ? `<span class="m">${b}</span>` : b)).join('') + "-3'";
+}
+
 const clock = new THREE.Clock();
 let time = 0, first = true;
 function frame() {
@@ -1519,11 +1626,23 @@ function frame() {
   update(tNow, time, dt);
   updateUI(tNow, time, dt);
   updateCallouts(tNow);
+  updateDecode();
+  updateTicker(time);
   updateStyle(time, dt, Math.min(raw, 0.25));
   updateAppendix(raw < 0.5 ? raw : 0.05);
   composer.render();
 
-  if (first) { first = false; requestAnimationFrame(() => document.body.classList.add('ready')); }
+  if (first) {
+    first = false;
+    const wait = Math.max(0, 1500 - (performance.now() - (window.__t0 || 0)));
+    setTimeout(() => {
+      const lt = document.getElementById('loaderTxt');
+      if (lt) lt.textContent = 'инкубация образца · 100%';
+      document.body.classList.add('ready');
+      glitch = 1;
+      setTimeout(() => window.__stopLoader && window.__stopLoader(), 1400);
+    }, wait);
+  }
   requestAnimationFrame(frame);
 }
 readScroll();
