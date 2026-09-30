@@ -7,7 +7,7 @@
   <meta name="description" content="Мрачный интерактивный 3D-атлас в ASCII и гравюре: как ВИЧ находит CD4 T-лимфоцит, проникает в него, мутирует — и как его останавливает антиретровирусная терапия." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Oranienbaum&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=Martian+Mono:wght@300;400;500&family=Playfair+Display:wght@900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=PT+Mono&family=Playfair+Display:wght@900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
     {
@@ -103,7 +103,7 @@
       <div class="hero-card">
         <p class="kicker">tabula I &nbsp;·&nbsp; sanguis</p>
         <h1 class="sr">Кровь и вирусы</h1>
-        <pre class="ascii-title blood" id="t1" aria-hidden="true"></pre>
+        <pre class="ascii-title" id="t1" aria-hidden="true"></pre>
         <pre class="ascii-title" id="t2" aria-hidden="true"></pre>
         <p class="lead">В одном микролитре твоей крови — около пяти миллионов эритроцитов и&nbsp;несколько сотен CD4 T-лимфоцитов. <em>Один из&nbsp;них сейчас станет мишенью.</em></p>
         <p class="scroll-hint"><span id="spin">|</span> листай вниз</p>
@@ -267,7 +267,7 @@
         <button type="button" data-course="1" aria-pressed="false">АРТ со&nbsp;2-го года</button>
       </div>
       <pre class="plot" id="course" aria-label="ASCII-график: число CD4-клеток и вирусная нагрузка по годам"></pre>
-      <p class="legend"><span class="d">#</span> CD4, клеток/мкл (слева) &nbsp;&nbsp; <span class="m">•</span> вирусная нагрузка, log₁₀ копий/мл (справа) &nbsp;&nbsp; <span>- - -</span> порог СПИД (200) &nbsp;&nbsp; <span class="m">|</span> начало АРТ</p>
+      <p class="legend"><b>#</b> CD4, клеток/мкл (слева) &nbsp;&nbsp; <b>*</b> вирусная нагрузка, 10^n копий/мл (справа) &nbsp;&nbsp; <span>- - -</span> порог СПИД (200) &nbsp;&nbsp; <b>|</b> начало АРТ</p>
       <div class="grid3">
         <div><b>0–3 месяца · острая фаза</b><p>Взрыв репликации, миллионы копий вируса в&nbsp;мл. У&nbsp;многих — «грипп»: температура, сыпь, увеличенные лимфоузлы. Заразность максимальная, а&nbsp;тесты на&nbsp;антитела могут быть ещё отрицательными.</p></div>
         <div><b>годы · бессимптомная стадия</b><p>Иммунитет устанавливает «точку равновесия» нагрузки. Самочувствие нормальное, но&nbsp;CD4 медленно падают — в&nbsp;среднем 8–10 лет до&nbsp;СПИДа без лечения.</p></div>
@@ -366,8 +366,54 @@
     </section>
 
     <!-- G -->
-    <section class="appx" data-title="Словарь" data-roman="G">
-      <p class="num">appendix G &nbsp;—&nbsp; <i>glossarium</i></p>
+    <section class="appx" data-title="Карта" data-roman="G">
+      <p class="num">appendix G &nbsp;—&nbsp; <i>mappa mundi</i></p>
+      <h2>Карта эпидемии: <em>где живёт вирус</em></h2>
+      <p>Каждый символ — клетка сетки 2,4° × 4°. Плотность знака — оценочная доля взрослых 15–49 лет, живущих с&nbsp;ВИЧ, в&nbsp;регионе UNAIDS. Наведи на&nbsp;регион или выбери его в&nbsp;списке.</p>
+      <div class="mapwrap">
+        <pre class="worldmap" id="worldmap" aria-label="ASCII-карта мира: распространённость ВИЧ по регионам UNAIDS"></pre>
+        <div class="mapside">
+          <div class="mappanel" id="mappanel" aria-live="polite"></div>
+          <div class="maplegend" aria-hidden="true">
+            <span><b>.</b> &lt; 0,1%</span><span><b>:</b> 0,1–0,5%</span><span><b>+</b> 0,5–1%</span><span><b>#</b> 1–5%</span><span><b>@</b> &gt; 5%</span>
+          </div>
+        </div>
+      </div>
+      <div class="regions" id="regions" role="group" aria-label="Регионы"></div>
+      <p class="small">Оценки UNAIDS за 2023 г., округлены. Регионы — по классификации UNAIDS; внутри региона страны различаются в&nbsp;десятки раз: например, в&nbsp;Эсватини с&nbsp;ВИЧ живёт примерно каждый четвёртый взрослый.</p>
+    </section>
+
+    <!-- H -->
+    <section class="appx" data-title="Каскад" data-roman="H">
+      <p class="num">appendix H &nbsp;—&nbsp; <i>gradus curationis</i></p>
+      <h2>Каскад <em>95–95–95</em></h2>
+      <p>Цель ООН к&nbsp;2025 году: 95% людей с&nbsp;ВИЧ знают свой статус, 95% из&nbsp;них получают лечение, у&nbsp;95% лечащихся вирус подавлен. Вот как это выглядит на&nbsp;сотне человек.</p>
+      <div class="course-ctl" role="group" aria-label="Сценарий каскада">
+        <button type="button" data-cascade="0" class="on" aria-pressed="true">мир, 2023</button>
+        <button type="button" data-cascade="1" aria-pressed="false">цель 95–95–95</button>
+      </div>
+      <div class="cascade" id="cascade"></div>
+      <p class="small">Проценты — от&nbsp;всех людей с&nbsp;ВИЧ. Для&nbsp;цели: 95% × 95% ≈ 90, 90% × 95% ≈ 86. Данные UNAIDS за&nbsp;2023 г.</p>
+    </section>
+
+    <!-- I -->
+    <section class="appx" data-title="Динамика" data-roman="I">
+      <p class="num">appendix I &nbsp;—&nbsp; <i>cursus temporum</i></p>
+      <h2>Динамика: <em>эпидемия отступает</em>, но&nbsp;не&nbsp;везде</h2>
+      <pre class="plot" id="trend" aria-label="ASCII-график: новые заражения и смерти от СПИДа, 1995–2023"></pre>
+      <p class="legend"><b>O</b> новые заражения, млн/год &nbsp;&nbsp; <b>X</b> смерти от&nbsp;СПИДа, млн/год &nbsp;&nbsp; точки — оценки UNAIDS, пунктир между ними — условный</p>
+      <div class="tiles">
+        <div><b data-count="30.7" data-dec="1">0</b><span>млн человек на&nbsp;АРТ в&nbsp;2023<br>(7,7&nbsp;млн в&nbsp;2010)</span></div>
+        <div><b data-count="60" data-suffix="%">0</b><span>меньше новых заражений,<br>чем на&nbsp;пике 1995 года</span></div>
+        <div><b data-count="55" data-suffix="%">0</b><span>новых заражений — среди ключевых<br>групп и&nbsp;их&nbsp;партнёров</span></div>
+        <div><b data-count="4000">0</b><span>девушек и&nbsp;молодых женщин 15–24&nbsp;лет<br>заражаются каждую неделю</span></div>
+      </div>
+      <p class="small">Новые заражения растут в&nbsp;трёх регионах: Восточная Европа и&nbsp;Центральная Азия, Ближний Восток и&nbsp;Северная Африка, Латинская Америка.</p>
+    </section>
+
+    <!-- J -->
+    <section class="appx" data-title="Словарь" data-roman="J">
+      <p class="num">appendix J &nbsp;—&nbsp; <i>glossarium</i></p>
       <h2>Словарь</h2>
       <dl class="gloss">
         <dt>АРТ</dt><dd>антиретровирусная терапия — пожизненная комбинация препаратов, подавляющая размножение ВИЧ.</dd>

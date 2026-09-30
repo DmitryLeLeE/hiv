@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { WORLD } from './map-data.js';
 
 /* =========================================================
    helpers
@@ -37,7 +38,7 @@ const isMobile = window.matchMedia('(max-width: 760px)').matches;
    palette
    ========================================================= */
 const C = {
-  red: col('#9e0c1c'),       // erythrocytes: dark blood
+  red: col('#b09a9a'),       // erythrocytes: pale enough to read as grey glyphs in b&w
   crimson: col('#2a0006'),
   mag: col('#ff1a33'),       // virus: fresh blood
   violet: col('#77736c'),    // nucleus / infected: ash
@@ -677,7 +678,7 @@ function buildGlyphs() {
   const x = cv.getContext('2d');
   x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, cv.height);
   x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.font = `400 ${Math.round(gh * 0.62)}px "Martian Mono", ui-monospace, monospace`;
+  x.font = `400 ${Math.round(gh * 0.72)}px "PT Mono", ui-monospace, monospace`;
   for (let i = 0; i < RAMP.length; i++) x.fillText(RAMP[i], i * gw + gw / 2, gh * 0.54);
   const t = new THREE.CanvasTexture(cv);
   t.minFilter = THREE.LinearFilter; t.generateMipmaps = false;
@@ -698,8 +699,8 @@ const styleU = {
   uInvert: { value: 0 },
   uGlitch: { value: 0 },
   uDim: { value: 0 },
-  uBone: { value: new THREE.Vector3(0.86, 0.83, 0.77) },
-  uBlood: { value: new THREE.Vector3(0.86, 0.06, 0.12) },
+  uBone: { value: new THREE.Vector3(0.94, 0.94, 0.94) },
+  uBlood: { value: new THREE.Vector3(0.94, 0.94, 0.94) },
 };
 const stylePass = new ShaderPass({
   uniforms: styleU,
@@ -730,7 +731,11 @@ const stylePass = new ShaderPass({
       float gi = floor(l * (uGlyphs - 0.001));
       vec2 lp = fract(px / cs);
       float g = texture2D(tGlyphs, vec2((gi + lp.x) / uGlyphs, lp.y)).r;
-      return tint(s) * g * (0.3 + 0.8 * l);
+      // black & white: blood and virus are printed in inverse video (lit cell, black glyph)
+      float r = redness(s);
+      vec3 normal = uBone * g * (0.3 + 0.8 * l);
+      vec3 inverse = uBone * (1.0 - g) * clamp(0.18 + l * 1.3, 0.0, 0.92);
+      return mix(normal, inverse, step(0.5, r) * step(0.34, luma(s)));
     }
 
     float hatch(vec2 p, float a, float sp, float w){
@@ -759,12 +764,17 @@ const stylePass = new ShaderPass({
       float gx = (tr + 2.0 * rt + br) - (tl + 2.0 * lf + bl);
       float gy = (tl + 2.0 * t + tr) - (bl + 2.0 * b + br);
       ink = max(ink, smoothstep(0.1, 0.35, length(vec2(gx, gy))));
-      return tint(s) * ink * (0.4 + 0.6 * l);
+      // blood and virus: halftone dots instead of hatching
+      vec2 q = fract(p / (sp * 1.05)) - 0.5;
+      float dr = sqrt(l) * 0.62;
+      float tone = max(1.0 - smoothstep(dr - 0.07, dr, length(q)), smoothstep(0.1, 0.35, length(vec2(gx, gy))));
+      ink = mix(ink, tone, step(0.5, redness(s)) * step(0.3, luma(s)));
+      return uBone * ink * (0.4 + 0.6 * l);
     }
 
     vec3 raw(vec3 s){
       float l = luma(s);
-      return mix(uBone * pow(l, 0.9) * 1.15, uBlood * (l * 1.8 + 0.05), redness(s));
+      return uBone * pow(l, 0.85) * 1.2;
     }
 
     void main(){
@@ -978,7 +988,7 @@ function layoutTitles() {
 if (document.fonts && document.fonts.load) {
   Promise.all([
     document.fonts.load(TITLE_FONT(100), 'Кровь'),
-    document.fonts.load('400 40px "Martian Mono"', 'ACGUКровь'),
+    document.fonts.load('400 40px "PT Mono"', 'ACGUКровь'),
   ]).then(() => { layoutTitles(); styleU.tGlyphs.value = buildGlyphs(); }).catch(() => {});
 }
 let titleTick = 0;
@@ -1135,7 +1145,11 @@ function updateCallouts(t) {
     c.line.setAttribute('points', `${ax},${ay} ${ex},${ey} ${fx},${ey}`);
     c.dot.setAttribute('cx', ax); c.dot.setAttribute('cy', ay);
     c.el.classList.toggle('l', dir < 0);
-    c.el.style.transform = `translate(${dir < 0 ? `calc(${fx - 8}px - 100%)` : `${fx + 8}px`}, ${ey - 8}px)`;
+    // keep the label on screen
+    const lw = c.el.offsetWidth || 120;
+    let lx = dir < 0 ? fx - 8 - lw : fx + 8;
+    lx = Math.max(6, Math.min(w - lw - 6, lx));
+    c.el.style.transform = `translate(${lx}px, ${ey - 8}px)`;
   }
 }
 
@@ -1173,7 +1187,7 @@ function update(t, time, dt) {
   const see = 1 - 0.82 * ss(5.2, 5.9, t) * (1 - ss(7.6, 8.3, t));
   cellMat.uniforms.uOpacity.value = see;
   cellMat.uniforms.uSee.value = see;
-  rbcMat.uniforms.uIntensity.value = lerp(0.3, 0.8, see);
+  rbcMat.uniforms.uIntensity.value = lerp(0.45, 1.35, see);
   recTips.material.uniforms.uIntensity.value = 0.75 * lerp(0.3, 1, see);
   recStalks.material.uniforms.uIntensity.value = 0.6 * lerp(0.3, 1, see);
   const infected = ss(6.4, 7.6, t) * (1 - ss(9.1, 9.9, t));
@@ -1444,7 +1458,7 @@ function renderCourse(p) {
   for (let c = 0; c < upto; c++) {
     const t = (c / (W - 1)) * YRS;
     const rv = rowOf(vlc(t, courseMode) / 6);
-    if (rv >= 0 && rv < H) grid[rv][c] = ['•', 'm'];
+    if (rv >= 0 && rv < H) grid[rv][c] = ['*', 'm'];
     const rc = rowOf(cd4(t, courseMode) / 1200);
     if (rc >= 0 && rc < H) grid[rc][c] = ['#', 'd'];
   }
@@ -1502,7 +1516,7 @@ function renderBars(p) {
     const n = Math.floor(full);
     const half = full - n > 0.5 ? ':' : (v > 0 && n === 0 && p > 0.2 ? '|' : '');
     const val = (v * Math.min(1, p * 1.2)).toFixed(v < 1 ? 2 : 1).replace('.', ',');
-    out += `${name.padEnd(pad)}<span class="${cls}">${'#'.repeat(n)}${half}</span> ${val} ${u}\n`;
+    out += `${name.padEnd(pad)}<span class="${cls}">${(cls === 'm' ? '=' : '#').repeat(n)}${half}</span> ${val} ${u}\n`;
   }
   out += `${''.padEnd(pad)}${'+' + '-'.repeat(W - 1)}\n${''.padEnd(pad)}0${' '.repeat(W - 5)}40 млн`;
   barsEl.innerHTML = out;
@@ -1524,12 +1538,227 @@ function updateAppendix(dt) {
 }
 
 
+/* =========================================================
+   infographics: ASCII numerals, world map, cascade, trend, tiles
+   ========================================================= */
+// generic text → ASCII-art (used for the plate numerals)
+function asciiArt(text, cols, font = (px) => `900 ${px}px "Playfair Display", "Times New Roman", serif`) {
+  const cv = document.createElement('canvas');
+  const x = cv.getContext('2d', { willReadFrequently: true });
+  x.font = font(100);
+  const tw = x.measureText(text).width || 100;
+  const ADV = 0.6, ASPECT = 1 / ADV, SS = 5;
+  const F = (100 * cols) / tw;
+  const rows = Math.max(3, Math.ceil((F * 0.86) / ASPECT));
+  cv.width = cols * SS; cv.height = rows * SS;
+  x.scale(SS, SS / ASPECT);
+  x.fillStyle = '#fff'; x.font = font(F); x.textBaseline = 'alphabetic';
+  x.fillText(text, 0, F * 0.78);
+  const d = x.getImageData(0, 0, cv.width, cv.height).data;
+  let out = '';
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let sum = 0;
+      for (let yy = 0; yy < SS; yy++) for (let xx = 0; xx < SS; xx++) sum += d[((r * SS + yy) * cv.width + c * SS + xx) * 4 + 3];
+      const a = sum / (SS * SS * 255);
+      out += a > 0.6 ? '#' : a > 0.32 ? '+' : a > 0.1 ? '.' : ' ';
+    }
+    out += '\n';
+  }
+  return out.replace(/\s+$/g, '');
+}
+function drawNumerals() {
+  document.querySelectorAll('.card .wm').forEach((el) => {
+    const t = el.dataset.text || '';
+    el.textContent = asciiArt(t, Math.min(56, 12 + t.length * 11));
+  });
+}
+
+// ---------- world map ----------
+const REGIONS = {
+  E: { n: 'Восточная и Южная Африка', p: 20.8, i: 450, lvl: 4, note: 'Больше половины всех людей с ВИЧ в мире. Здесь же сильнее всего снизилось число новых заражений с 2010 года.' },
+  W: { n: 'Западная и Центральная Африка', p: 5.1, i: 180, lvl: 3, note: 'Отстаёт по охвату лечением, особенно среди детей: многие не знают о диагнозе.' },
+  C: { n: 'Карибский бассейн', p: 0.34, i: 16, lvl: 3, note: 'Вторая по распространённости зона после Африки к югу от Сахары.' },
+  R: { n: 'Восточная Европа и Центральная Азия', p: 2.1, i: 140, lvl: 3, note: 'Один из немногих регионов, где эпидемия растёт. Основная часть новых случаев — в России.' },
+  L: { n: 'Латинская Америка', p: 2.5, i: 120, lvl: 2, note: 'Число новых заражений растёт.' },
+  N: { n: 'Западная и Центральная Европа, Северная Америка', p: 2.3, i: 58, lvl: 1, note: 'Высокий охват АРТ: у большинства людей с ВИЧ вирус подавлен.' },
+  A: { n: 'Азия и Тихоокеанский регион', p: 6.7, i: 300, lvl: 1, note: 'Доля в населении невелика, но в абсолютных числах это второй регион мира.' },
+  M: { n: 'Ближний Восток и Северная Африка', p: 0.19, i: 19, lvl: 0, note: 'Самая низкая распространённость, но заражения растут, а охват лечением один из самых низких.' },
+};
+const LVL = ['.', ':', '+', '#', '@'];
+const LVL_TXT = ['< 0,1%', '0,1–0,5%', '0,5–1%', '1–5%', '> 5%'];
+const mapEl = document.getElementById('worldmap');
+const panelEl = document.getElementById('mappanel');
+const regionsEl = document.getElementById('regions');
+let spansByR = {}, mapActive = null, mapPausedUntil = 0, mapCycleT = 0, mapCycleI = 0, mapVisible = false;
+const fmtNum = (v, dec = 1) => v.toFixed(dec).replace('.', ',');
+function renderMap() {
+  const grid = mapEl.clientWidth < 760 ? WORLD.small : WORLD.big;
+  const cols = grid[0].length, rows = grid.length;
+  mapEl.style.fontSize = `${Math.max(6.5, Math.min(11, (mapEl.clientWidth - 26) / (cols * 0.6)))}px`;
+  let html = '';
+  for (let r = 0; r < rows; r++) {
+    const lat = 84 - ((r + 0.5) / rows) * 142;
+    const latLine = [60, 30, 0, -30].some((L) => Math.abs(lat - L) < 71 / rows);
+    let line = '', run = '', key = null;
+    const flush = () => {
+      if (!run) return;
+      if (key === 'o') line += `<span class="o">${run}</span>`;
+      else line += `<span data-r="${key.toUpperCase()}"${key === key.toLowerCase() ? ' class="k"' : ''}>${run}</span>`;
+      run = '';
+    };
+    for (let c = 0; c < cols; c++) {
+      const ch = grid[r][c] || ' ';
+      let k, g;
+      if (ch === ' ') {
+        const lon = -180 + ((c + 0.5) / cols) * 360;
+        const lonLine = Math.abs(lon - Math.round(lon / 30) * 30) < 180 / cols;
+        k = 'o'; g = (lonLine && r % 2 === 0) || (latLine && c % 3 === 0) ? '·' : ' ';
+      } else {
+        k = ch; g = LVL[REGIONS[ch.toUpperCase()].lvl];
+      }
+      if (k !== key) { flush(); key = k; }
+      run += g;
+    }
+    flush();
+    html += `<span class="row" style="--r:${r}">${line}</span>`;
+  }
+  mapEl.innerHTML = html;
+  spansByR = {};
+  mapEl.querySelectorAll('[data-r]').forEach((sp) => (spansByR[sp.dataset.r] = spansByR[sp.dataset.r] || []).push(sp));
+  setRegion(mapActive, true);
+}
+function setRegion(k, force) {
+  if (k === mapActive && !force) return;
+  if (mapActive && spansByR[mapActive]) spansByR[mapActive].forEach((s) => s.classList.remove('on'));
+  mapActive = k;
+  mapEl.classList.toggle('hl', !!k);
+  if (k && spansByR[k]) spansByR[k].forEach((s) => s.classList.add('on'));
+  [...regionsEl.children].forEach((b) => { const on = b.dataset.r === k; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  if (!k) {
+    panelEl.innerHTML = `<h3>весь мир · 2023</h3><dl><dt>живут с ВИЧ</dt><dd>39,9 млн</dd><dt>новых заражений за год</dt><dd>1,3 млн</dd><dt>смертей от СПИДа</dt><dd>630 тыс.</dd></dl><p>Наведи курсор на регион.</p>`;
+    return;
+  }
+  const R0 = REGIONS[k];
+  const share = R0.p / 39.9;
+  const n = Math.max(1, Math.round(share * 20));
+  panelEl.innerHTML = `<h3>${R0.n}</h3><dl><dt>живут с ВИЧ</dt><dd>${R0.p < 1 ? Math.round(R0.p * 1000) + ' тыс.' : fmtNum(R0.p) + ' млн'}</dd><dt>новых заражений в 2023</dt><dd>≈ ${R0.i} тыс.</dd><dt>взрослые 15–49 с ВИЧ</dt><dd>${LVL_TXT[R0.lvl]} &nbsp;<code>${LVL[R0.lvl]}</code></dd></dl><p><code>[${'#'.repeat(n)}${'.'.repeat(20 - n)}]</code> ${Math.round(share * 100)}% мира</p><p>${R0.note}</p>`;
+}
+Object.entries(REGIONS).forEach(([k, r]) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.r = k; b.textContent = `${LVL[r.lvl]} ${r.n}`; b.setAttribute('aria-pressed', 'false');
+  b.addEventListener('click', () => { mapPausedUntil = performance.now() + 12000; setRegion(mapActive === k ? null : k); });
+  regionsEl.appendChild(b);
+});
+mapEl.addEventListener('mousemove', (e) => {
+  const sp = e.target.closest && e.target.closest('[data-r]');
+  mapPausedUntil = performance.now() + 6000;
+  if (sp) setRegion(sp.dataset.r);
+});
+mapEl.addEventListener('mouseleave', () => { mapPausedUntil = performance.now() + 1500; });
+new IntersectionObserver((es) => es.forEach((e) => { mapVisible = e.isIntersecting; })).observe(mapEl);
+const CYCLE = ['E', 'W', 'C', 'R', 'L', 'N', 'A', 'M', null];
+function updateMap(time) {
+  if (!mapVisible || reduceMotion || performance.now() < mapPausedUntil || time - mapCycleT < 3.2) return;
+  mapCycleT = time;
+  setRegion(CYCLE[mapCycleI++ % CYCLE.length]);
+}
+renderMap();
+window.addEventListener('resize', () => { renderMap(); drawNumerals(); });
+
+// ---------- cascade 95-95-95 ----------
+const cascadeEl = document.getElementById('cascade');
+const CAS = [[86, 77, 72], [95, 90, 86]];
+const CAS_T = ['знают свой ВИЧ-статус', 'получают АРТ', 'вирусная нагрузка подавлена'];
+let casMode = 0, casAnim = 0, casLast = -1;
+function renderCascade(p) {
+  cascadeEl.innerHTML = CAS[casMode].map((v, k) => {
+    const filled = Math.round(v * Math.min(1, p * (1 + k * 0.15)));
+    let g = '';
+    for (let i = 0; i < 100; i++) { g += i < filled ? '<span class="f">#</span>' : '.'; if (i % 10 === 9) g += '\n'; }
+    return `<figure><pre aria-hidden="true">${g}</pre><figcaption><b>${filled}</b>из 100 — ${CAS_T[k]}</figcaption></figure>`;
+  }).join('');
+}
+document.querySelectorAll('[data-cascade]').forEach((b) => b.addEventListener('click', () => {
+  casMode = +b.dataset.cascade;
+  document.querySelectorAll('[data-cascade]').forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-pressed', on); });
+  casAnim = 0.0001; glitch = Math.max(glitch, 0.4);
+}));
+cascadeEl.closest('.appx').onReveal = () => { if (casAnim === 0) casAnim = 0.0001; };
+renderCascade(0);
+
+// ---------- trend 1995–2023: anchors are UNAIDS estimates ----------
+const trendEl = document.getElementById('trend');
+const INF = [[1995, 3.3], [2010, 2.1], [2023, 1.3]];
+const DEA = [[2004, 2.1], [2010, 1.3], [2023, 0.63]];
+let trendAnim = 0, trendLast = -1;
+function renderTrend(p) {
+  const Y0 = 1995, Y1 = 2023, per = isMobile ? 1 : 2, W = (Y1 - Y0) * per + 1, H = 15, MAX = 3.5;
+  const grid = Array.from({ length: H }, () => Array.from({ length: W }, () => [' ', '']));
+  const rowOf = (v) => Math.round((1 - v / MAX) * (H - 1));
+  const colOf = (y) => Math.round((y - Y0) * per);
+  const upto = Math.floor(p * W);
+  const put = (c, r, ch, cls) => { if (c >= 0 && c < W && r >= 0 && r < H && c <= upto) grid[r][c] = [ch, cls]; };
+  const drawSeries = (pts, mark) => {
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [y0, v0] = pts[k], [y1, v1] = pts[k + 1];
+      for (let c = colOf(y0); c <= colOf(y1); c++) {
+        const y = Y0 + c / per, v = v0 + ((v1 - v0) * (y - y0)) / (y1 - y0);
+        if (grid[rowOf(v)][c][0] === ' ') put(c, rowOf(v), '.', 'd');
+      }
+    }
+    pts.forEach(([y, v]) => {
+      put(colOf(y), rowOf(v), mark, 'a');
+      const lab = `${fmtNum(v, v < 1 ? 2 : 1)}`;
+      [...lab].forEach((ch, i) => put(colOf(y) + 2 + i, rowOf(v), ch, 'm'));
+    });
+  };
+  drawSeries(INF, 'O');
+  drawSeries(DEA, 'X');
+  let out = '';
+  for (let r = 0; r < H; r++) {
+    const v = (1 - r / (H - 1)) * MAX;
+    out += (r % 2 === 0 ? fmtNum(v).padStart(4) + ' +' : '     |');
+    for (const [ch, cls] of grid[r]) out += cls ? `<span class="${cls}">${ch}</span>` : ch;
+    out += '\n';
+  }
+  let axis = '     +', ticks = '      ';
+  const tickYears = [1995, 2000, 2005, 2010, 2015, 2020, 2023];
+  const tc = new Set(tickYears.map(colOf));
+  for (let c = 0; c < W; c++) axis += tc.has(c) ? '+' : '-';
+  tickYears.forEach((y) => { const c = colOf(y); if (!isMobile || y % 10 === 5 || y === 2023) ticks = ticks.padEnd(6 + c) + y; });
+  trendEl.innerHTML = out + axis + '\n' + ticks + '  млн/год';
+}
+trendEl.closest('.appx').onReveal = () => { if (trendAnim === 0) trendAnim = 0.0001; };
+renderTrend(0);
+
+// ---------- count-up tiles ----------
+const tiles = [...document.querySelectorAll('.tiles b[data-count]')];
+let tilesAnim = 0;
+function renderTiles(p) {
+  const e = 1 - Math.pow(1 - p, 3);
+  tiles.forEach((b) => {
+    const v = +b.dataset.count * e, dec = +(b.dataset.dec || 0);
+    b.textContent = (dec ? fmtNum(v, dec) : Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')) + (b.dataset.suffix || '');
+  });
+}
+const trendReveal = trendEl.closest('.appx').onReveal;
+trendEl.closest('.appx').onReveal = () => { trendReveal(); if (tilesAnim === 0) tilesAnim = 0.0001; };
+
+function updateInfographics(time, dt) {
+  updateMap(time);
+  const step = (a, dur) => Math.min(1, a + dt / (reduceMotion ? 0.01 : dur));
+  if (casAnim > 0 && casAnim < 1) { casAnim = step(casAnim, 1.3); const q = Math.floor(casAnim * 60); if (q !== casLast) { casLast = q; renderCascade(casAnim); } }
+  if (trendAnim > 0 && trendAnim < 1) { trendAnim = step(trendAnim, 1.6); const q = Math.floor(trendAnim * 70); if (q !== trendLast) { trendLast = q; renderTrend(trendAnim); } }
+  if (tilesAnim > 0 && tilesAnim < 1) { tilesAnim = step(tilesAnim, 1.6); renderTiles(tilesAnim); }
+}
+
 /* ---------- plate furniture: scanner line, roman watermark, word reveal ---------- */
 chapters.forEach((ch) => {
   const card = ch.querySelector('.card');
   if (!card) return;
   const scan = document.createElement('i'); scan.className = 'scan'; scan.setAttribute('aria-hidden', 'true');
-  const wm = document.createElement('span'); wm.className = 'wm'; wm.textContent = ch.dataset.roman; wm.setAttribute('aria-hidden', 'true');
+  const wm = document.createElement('pre'); wm.className = 'wm'; wm.dataset.text = ch.dataset.roman; wm.setAttribute('aria-hidden', 'true');
   card.prepend(scan, wm);
 });
 function splitWords(el) {
@@ -1552,6 +1781,8 @@ function splitWords(el) {
   walk(el);
 }
 document.querySelectorAll('.card h2, .appx h2, .appx-h').forEach(splitWords);
+drawNumerals();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawNumerals);
 document.querySelectorAll('.timeline li, .shields li').forEach((li, i, all) => li.style.setProperty('--i', [...li.parentElement.children].indexOf(li)));
 document.querySelectorAll('.gloss > *').forEach((el) => el.style.setProperty('--i', Math.floor([...el.parentElement.children].indexOf(el) / 2)));
 
@@ -1630,6 +1861,7 @@ function frame() {
   updateTicker(time);
   updateStyle(time, dt, Math.min(raw, 0.25));
   updateAppendix(raw < 0.5 ? raw : 0.05);
+  updateInfographics(time, raw < 0.5 ? raw : 0.05);
   composer.render();
 
   if (first) {
